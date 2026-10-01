@@ -647,49 +647,106 @@ router.get('/loja/status/:pedidoId', auth.requireAuth, async (req, res) => {
 });
 
 // Helper: confirmar pagamento e entregar produto
-async function confirmarPedidoDash(pedidoId, db) {
+async function confirmarPedidoDash(pedidoId, dbIn) {
+  const { db, Pedidos, Usuarios, Produtos } = getMainDb();
   try {
-    const { Pedidos, Usuarios } = getMainDb();
-    const pedido = Pedidos.get(pedidoId);
+    const pedido = db.prepare('SELECT * FROM pedidos WHERE id=?').get(pedidoId);
     if (!pedido || pedido.status !== 'pendente') return;
 
-    // Marcar como pago
     db.prepare("UPDATE pedidos SET status='pago', pago_em=strftime('%s','now') WHERE id=?").run(pedidoId);
 
-    // Garantir usuário no banco
-    const dashUser = db.prepare('SELECT * FROM dash_usuarios WHERE discord_id=?').get(pedido.usuario_id);
-    if (!dashUser && pedido.usuario_id) Usuarios.garantir(pedido.usuario_id, pedido.usuario_id);
+    const produto = Produtos.get(pedido.produto_id);
+    if (!produto) return;
 
-    // Salvar varianteId na nota_fiscal para processarEntrega encontrar o estoque
-    const varianteId = pedido.nota_fiscal
-      ? (() => { try { return JSON.parse(pedido.nota_fiscal)?.varianteId; } catch { return null; } })()
-      : null;
+    let conteudo = null;
+    const qtd     = Math.max(1, parseInt(pedido.quantidade) || 1);
 
-    // Se não tem varianteId na nota_fiscal, pegar da query de variantes do pedido
+    // Tentar pegar varianteId da nota_fiscal
+    let varianteId = null;
+    try { varianteId = pedido.nota_fiscal ? JSON.parse(pedido.nota_fiscal)?.varianteId : null; } catch {}
+
+    // Se não tem varianteId, pegar a primeira variante ativa do produto
     if (!varianteId) {
-      // Tentar pegar a primeira variante ativa do produto
-      const variante = db.prepare('SELECT id FROM variantes_produto WHERE produto_id=? AND ativo=1 ORDER BY ordem ASC LIMIT 1').get(pedido.produto_id);
-      if (variante) {
-        const nota = { varianteId: variante.id };
-        db.prepare("UPDATE pedidos SET nota_fiscal=? WHERE id=?").run(JSON.stringify(nota), pedidoId);
-      }
+      const v = db.prepare('SELECT id FROM variantes_produto WHERE produto_id=? AND ativo=1 ORDER BY ordem ASC LIMIT 1').get(pedido.produto_id);
+      if (v) varianteId = v.id;
     }
 
-    // Entregar via processarEntrega (igual ao bot Discord)
+    if (produto.tipo === 'digital') {
+      if (varianteId) {
+        // Estoque por variante
+        const itens = [];
+        for (let i = 0; i < qtd; i++) {
+          const item = db.prepare('SELECT * FROM estoque_variante WHERE variante_id=? AND usado=0 LIMIT 1').get(varianteId);
+          if (item) {
+            db.prepare("UPDATE estoque_variante SET usado=1, usado_por=?, pedido_id=?, usado_em=strftime('%s','now') WHERE id=?").run(pedido.usuario_id, pedidoId, item.id);
+            itens.push(item.conteudo);
+          } else break;
+        }
+        conteudo = itens.length > 0 ? itens.join('\n---\n') : null;
+      }
+      if (!conteudo) {
+        // Fallback: estoque digital global
+        const itens = [];
+        for (let i = 0; i < qtd; i++) {
+          const item = db.prepare('SELECT * FROM estoque_digital WHERE produto_id=? AND usado=0 LIMIT 1').get(pedido.produto_id);
+          if (item) {
+            db.prepare("UPDATE estoque_digital SET usado=1, usado_por=?, pedido_id=?, usado_em=strftime('%s','now') WHERE id=?").run(pedido.usuario_id, pedidoId, item.id);
+            itens.push(item.conteudo);
+          } else break;
+        }
+        conteudo = itens.length > 0 ? itens.join('\n---\n') : '⚠️ Sem estoque — equipe entrará em contato.';
+      }
+    } else {
+      conteudo = 'Produto físico — entrega combinada via suporte.';
+    }
+
+    // Salvar conteúdo entregue no pedido
+    db.prepare("UPDATE pedidos SET status='entregue', conteudo_entregue=?, entregue_em=strftime('%s','now') WHERE id=?").run(conteudo, pedidoId);
+    db.prepare('UPDATE produtos SET vendas=vendas+? WHERE id=?').run(qtd, pedido.produto_id);
+
+    // Atualizar stats do usuário
+    const u = Usuarios.get(pedido.usuario_id);
+    if (u) {
+      Usuarios.atualizar(pedido.usuario_id, {
+        total_gasto:   (u.total_gasto   || 0) + pedido.valor_total,
+        total_compras: (u.total_compras || 0) + 1,
+      });
+      Usuarios.addPontos(pedido.usuario_id, Math.floor(pedido.valor_total));
+    }
+
+    // Enviar DM no Discord
     const clientRef = require('../utils/clientRef');
     const client    = clientRef.getClient();
-    if (client) {
-      const { processarEntrega } = require('../systems/loja');
-      const pedidoAtualizado = Pedidos.get(pedidoId);
-      await processarEntrega(pedidoAtualizado, client);
+    if (client && pedido.usuario_id && pedido.usuario_id !== '0') {
+      try {
+        // Buscar em todos os guilds onde o bot está
+        let member = null;
+        for (const [, guild] of client.guilds.cache) {
+          member = await guild.members.fetch(pedido.usuario_id).catch(() => null);
+          if (member) break;
+        }
+
+        if (member) {
+          const { EmbedBuilder } = require('discord.js');
+          const embed = new EmbedBuilder()
+            .setColor(0x00ff88)
+            .setTitle('✅ Produto Entregue!')
+            .setDescription(`Seu pedido foi confirmado e o produto foi entregue!\n\n**Produto:** ${produto.nome}\n**Valor:** R$ ${Number(pedido.valor_total).toFixed(2)}`)
+            .addFields({ name: '📦 Conteúdo', value: `\`\`\`${conteudo.slice(0, 1000)}\`\`\`` })
+            .setTimestamp()
+            .setFooter({ text: 'MrStore • Obrigado pela compra!' });
+          await member.send({ embeds: [embed] }).catch(() => {});
+        }
+      } catch (e) { console.error('[DashDM]', e.message); }
+
+      // Log de vendas
+      try {
+        const { logVenda } = require('../utils/canalVendas');
+        const pedidoFinal = db.prepare('SELECT * FROM pedidos WHERE id=?').get(pedidoId);
+        await logVenda(client, pedidoFinal, { vendidoPorCustom: '🌐 Site (dashboard)' }).catch(() => {});
+      } catch (e) { console.error('[DashLogVenda]', e.message); }
     }
 
-    // Log de vendas com "Site"
-    const { logVenda } = require('../utils/canalVendas');
-    const pedidoFinal = Pedidos.get(pedidoId);
-    if (client && pedidoFinal) {
-      await logVenda(client, pedidoFinal, { vendidoPorCustom: '🌐 Site (dashboard)' }).catch(() => {});
-    }
   } catch (e) { console.error('[Dashboard confirmarPedido]', e.message); }
 }
 
