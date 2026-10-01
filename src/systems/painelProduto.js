@@ -284,7 +284,7 @@ async function publicarPainel(interaction, estado, client) {
   `).run(painelId, canal.id, produtoId, estado.titulo, estado.descricao, estado.cor, estado.imagemUrl || null, interaction.user.id);
 
   // Montar embed final
-  const variantes = db.prepare('SELECT * FROM variantes_produto WHERE produto_id=? AND ativo=1 ORDER BY ordem ASC').all(produtoId);
+  const variantes = db.prepare('SELECT * FROM variantes_produto WHERE produto_id=? AND ativo=1 ORDER BY preco ASC').all(produtoId);
   const cor       = parseInt(estado.cor, 16) || config.colors.loja;
 
   const embed = new EmbedBuilder()
@@ -338,12 +338,15 @@ function getFlashSale(produtoId) {
 function montarComponentes(variantes, painelId) {
   if (!variantes.length) return [];
 
-  const produtoId = variantes[0]?.produto_id;
+  // Ordenar por preço crescente
+  const variantesOrdenadas = [...variantes].sort((a, b) => Number(a.preco) - Number(b.preco));
+
+  const produtoId = variantesOrdenadas[0]?.produto_id;
   const produto   = produtoId ? db.prepare('SELECT nome, tipo FROM produtos WHERE id=?').get(produtoId) : null;
   const isCoins   = produto?.nome?.toLowerCase().includes('coin') || produto?.tipo === 'coins';
   const fs        = getFlashSale(produtoId);
 
-  const options = variantes.slice(0, 25).map(v => {
+  const options = variantesOrdenadas.slice(0, 25).map(v => {
     const qtd        = isCoins ? null : (db.prepare('SELECT COUNT(*) as c FROM estoque_variante WHERE variante_id=? AND usado=0').get(v.id)?.c || 0);
     const temEstoque = isCoins || qtd > 0;
 
@@ -396,7 +399,7 @@ async function atualizarPainelProduto(guild, painelId) {
     const produto = db.prepare('SELECT * FROM produtos WHERE id=?').get(painel.produto_id);
     if (!produto) return;
 
-    const variantes = db.prepare('SELECT * FROM variantes_produto WHERE produto_id=? AND ativo=1 ORDER BY ordem ASC').all(painel.produto_id);
+    const variantes = db.prepare('SELECT * FROM variantes_produto WHERE produto_id=? AND ativo=1 ORDER BY preco ASC').all(produtoId);
     console.log(`[PainelProduto] Atualizando ${painelId.slice(0,8)} — ${produto.nome} — ${variantes.length} variante(s)`);
 
     const canal = guild.channels.cache.get(painel.canal_id);
