@@ -366,21 +366,37 @@ router.get('/', mid, (req, res) => {
 });
 
 // ─── POST actions ──────────────────────────────────────────────
-router.post('/toggle-loja', mid, (req, res) => {
+router.post('/toggle-loja', mid, async (req, res) => {
   const { Config } = getMainDb();
   const atual = Config.get('loja_aberta') !== false;
   Config.set('loja_aberta', !atual);
+  // Atualizar painel admin no Discord
+  try {
+    const client = getClient();
+    if (client) {
+      const guild = client.guilds.cache.get(process.env.GUILD_ID) || client.guilds.cache.first();
+      if (guild) { const { atualizarPainelAdmin } = require('../systems/painelAdmin'); await atualizarPainelAdmin(guild).catch(()=>{}); }
+    }
+  } catch {}
   res.redirect('/painel/config-mr?sec=geral&msg=ok');
 });
 
-router.post('/toggle-manutencao', mid, (req, res) => {
+router.post('/toggle-manutencao', mid, async (req, res) => {
   const { Config } = getMainDb();
   const atual = Config.get('manutencao') === true || Config.get('manutencao') === '1';
   Config.set('manutencao', !atual);
+  // Atualizar painel admin no Discord
+  try {
+    const client = getClient();
+    if (client) {
+      const guild = client.guilds.cache.get(process.env.GUILD_ID) || client.guilds.cache.first();
+      if (guild) { const { atualizarPainelAdmin } = require('../systems/painelAdmin'); await atualizarPainelAdmin(guild).catch(()=>{}); }
+    }
+  } catch {}
   res.redirect('/painel/config-mr?sec=geral&msg=ok');
 });
 
-router.post('/salvar-geral', mid, express.urlencoded({extended:false}), (req, res) => {
+router.post('/salvar-geral', mid, express.urlencoded({extended:false}), async (req, res) => {
   const { Config } = getMainDb();
   const { nome_loja, meta_dia, cashback_pct, msg_boas_vindas, canal_vendas_id, canal_cupons_id, caixa_cooldown } = req.body;
   if (nome_loja)       Config.set('nome_loja',        nome_loja);

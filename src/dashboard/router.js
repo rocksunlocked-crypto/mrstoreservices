@@ -718,9 +718,18 @@ async function confirmarPedidoDash(pedidoId, dbIn) {
     const clientRef = require('../utils/clientRef');
     const client    = clientRef.getClient();
     if (client && pedido.usuario_id && pedido.usuario_id !== '0') {
-      // DM para o usuário — usa client.users.fetch() que não precisa do guild
+      // DM para o usuário — busca no guild principal primeiro, depois tenta direto
       try {
-        const discordUser = await client.users.fetch(pedido.usuario_id).catch(() => null);
+        const GUILD_PRINCIPAL = process.env.GUILD_ID || '1522456699082903572';
+        const guild  = client.guilds.cache.get(GUILD_PRINCIPAL) || client.guilds.cache.first();
+        let discordUser = null;
+        if (guild) {
+          const member = await guild.members.fetch(pedido.usuario_id).catch(() => null);
+          discordUser = member?.user || null;
+        }
+        if (!discordUser) {
+          discordUser = await client.users.fetch(pedido.usuario_id).catch(() => null);
+        }
         if (discordUser) {
           const { EmbedBuilder } = require('discord.js');
           const embed = new EmbedBuilder()
