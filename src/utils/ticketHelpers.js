@@ -1,9 +1,10 @@
 const { EmbedBuilder } = require('discord.js');
 const config = require('../config');
 
-// Gera ID único para o ticket: TICKET-0001
-function generateTicketId(count) {
-  return `TICKET-${String(count + 1).padStart(4, '0')}`;
+// Gera ID único para o ticket no mesmo formato dos tickets de compra (UUID slice 8 uppercase)
+function generateTicketId() {
+  const { v4: uuidv4 } = require('uuid');
+  return uuidv4().slice(0, 8).toUpperCase();
 }
 
 // Formata timestamp Unix para string legível

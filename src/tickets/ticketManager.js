@@ -59,9 +59,8 @@ async function openTicket(interaction, category, subject, extraFields = []) {
     });
   }
 
-  // Gerar ID sequencial baseado no banco
-  const totalTickets = db.prepare('SELECT COUNT(*) as c FROM tickets').get()?.c || 0;
-  const ticketId = generateTicketId(totalTickets);
+  // Gerar ID único no mesmo formato dos tickets de compra
+  const ticketId = generateTicketId();
   const channelName = `🎫│${ticketId.toLowerCase()}`;
   const r = config.roles;
 

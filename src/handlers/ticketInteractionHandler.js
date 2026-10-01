@@ -205,8 +205,12 @@ async function handleButton(interaction) {
   }
 
   // Resolver ticket do canal para os próximos botões
+  // Extrai ticketId do customId de forma robusta (evita split('_').pop() que quebra com IDs compostos)
+  const TICKET_PREFIXES = ['tmenu_usuario_','tmenu_admin_','ticket_close_','tchamar_staff_','tver_ticket_','ticket_transcript_','ticket_claim_','ticket_priority_','ticket_tags_','ticket_addnote_','ticket_transfer_','ticket_rename_','tgerar_pix_','ticket_reopen_','ticket_delete_'];
+  let resolvedTicketId = null;
+  for (const p of TICKET_PREFIXES) { if (customId.startsWith(p)) { resolvedTicketId = customId.slice(p.length); break; } }
   const ticket = db.getTicketByChannel(interaction.channel.id)
-    || db.getTicket(customId.split('_').pop());
+    || (resolvedTicketId ? db.getTicket(resolvedTicketId) : null);
 
   // ── MENU USUÁRIO ─────────────────────────────────────────
   if (customId.startsWith('tmenu_usuario_')) {
@@ -401,10 +405,7 @@ async function handleButton(interaction) {
         new TextInputBuilder().setCustomId('pix_produto').setLabel('Nome do produto / serviço').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(100),
       ),
       new ActionRowBuilder().addComponents(
-        new TextInputBuilder().setCustomId('pix_valor').setLabel('Valor (R$)').setStyle(TextInputStyle.Short).setRequired(true).setPlaceholder('Ex: 29.90'),
-      ),
-      new ActionRowBuilder().addComponents(
-        new TextInputBuilder().setCustomId('pix_quantidade').setLabel('Quantidade').setStyle(TextInputStyle.Short).setRequired(false).setPlaceholder('Padrão: 1'),
+        new TextInputBuilder().setCustomId('pix_valor').setLabel('Valor total (R$)').setStyle(TextInputStyle.Short).setRequired(true).setPlaceholder('Ex: 29.90'),
       ),
     );
     return interaction.showModal(modal);
@@ -465,16 +466,13 @@ async function handleModal(interaction) {
 
   // PIX Admin — gerar QR no canal
   if (customId.startsWith('modal_pix_admin_')) {
-    const ticketId   = customId.replace('modal_pix_admin_', '');
-    const produto    = interaction.fields.getTextInputValue('pix_produto');
-    const valorStr   = interaction.fields.getTextInputValue('pix_valor').replace(',', '.');
-    const qtdStr     = interaction.fields.getTextInputValue('pix_quantidade') || '1';
-    const qtd        = Math.max(1, parseInt(qtdStr) || 1);
-    const valorUnit  = parseFloat(valorStr);
-    if (isNaN(valorUnit) || valorUnit <= 0)
+    const ticketId  = customId.replace('modal_pix_admin_', '');
+    const produto   = interaction.fields.getTextInputValue('pix_produto');
+    const valorStr  = interaction.fields.getTextInputValue('pix_valor').replace(',', '.');
+    const valor     = parseFloat(valorStr);
+    if (isNaN(valor) || valor <= 0)
       return interaction.reply({ embeds: [errorEmbed('Valor inválido. Use ex: 29.90')], ephemeral: true });
-    const valorTotal = valorUnit * qtd;
-    return gerarPixAdmin(interaction, ticketId, produto, valorUnit, qtd, valorTotal);
+    return gerarPixAdmin(interaction, ticketId, produto, valor);
   }
 }
 
@@ -622,35 +620,70 @@ function iniciarPollingChamada(txid, ticketId, interaction) {
 // HELPER — GERAR PIX ADMIN (QR no canal, visível para todos)
 // ────────────────────────────────────────────────────────────────────────────
 
-async function gerarPixAdmin(interaction, ticketId, produto, valorUnit, qtd, valorTotal) {
+async function gerarPixAdmin(interaction, ticketId, produto, valorTotal) {
   await interaction.deferReply({ ephemeral: true });
 
   try {
     const efi    = require('../systems/efi');
     const { v4: uuidv4 } = require('uuid');
-    const pedidoId = uuidv4();
+    const { Usuarios, Pedidos, Produtos, db: dbMain } = require('../database/database');
 
+    // Garantir perfil do usuário do ticket no banco
+    const ticket      = db.getTicketByChannel(interaction.channel.id) || db.getTicket(ticketId);
+    const usuarioId   = ticket?.user_id || ticket?.usuario_id;
+    if (usuarioId) Usuarios.garantir(usuarioId, '');
+
+    // Criar pedido real no banco para rastrear no log de vendas
+    const pedidoId = uuidv4();
+    const atendente = interaction.user.id; // quem gerou o QR
+
+    // Criar produto temporário se não existir (produto avulso do ticket)
+    let produtoDb = dbMain.prepare("SELECT * FROM produtos WHERE nome=? AND tipo='ticket_avulso'").get(produto);
+    if (!produtoDb) {
+      const pid = uuidv4();
+      dbMain.prepare("INSERT INTO produtos (id, nome, descricao, preco, tipo, criado_por) VALUES (?,?,?,?,?,?)")
+        .run(pid, produto, 'Produto gerado via ticket', valorTotal, 'ticket_avulso', atendente);
+      produtoDb = { id: pid, nome: produto };
+    }
+
+    // Registrar pedido
+    dbMain.prepare(`
+      INSERT INTO pedidos (id, usuario_id, produto_id, quantidade, valor_unit, valor_total, status, metodo_pag, ticket_id, nota_fiscal)
+      VALUES (?,?,?,1,?,?,?,?,?,?)
+    `).run(
+      pedidoId,
+      usuarioId || 'desconhecido',
+      produtoDb.id,
+      valorTotal, valorTotal,
+      'pendente', 'pix',
+      ticketId,
+      JSON.stringify({ geradoPor: atendente, via: 'ticket_admin_qr' }),
+    );
+
+    // Gerar PIX
     const cobr = await efi.criarCobrancaPix({
       valor:     valorTotal,
-      descricao: `${produto} (x${qtd}) — Ticket ${ticketId}`,
+      descricao: `${produto} — Ticket ${ticketId}`,
       pedidoId,
     });
 
-    const qr = await efi.gerarQRCode(cobr.locId);
-
+    const qr        = await efi.gerarQRCode(cobr.locId);
     const expiraPix = Math.floor(Date.now() / 1000) + 1800;
+
+    // Salvar txid no pedido
+    dbMain.prepare("UPDATE pedidos SET tx_id=? WHERE id=?").run(cobr.txid, pedidoId);
 
     const embed = new EmbedBuilder()
       .setColor(config.colors.pix)
       .setTitle('💸 Cobrança PIX')
-      .setDescription('Realize o pagamento abaixo para concluir a compra.')
+      .setDescription('Realize o pagamento abaixo para concluir.')
       .addFields(
-        { name: '📦 Produto',   value: produto,                              inline: true },
-        { name: '🔢 Qtd',       value: String(qtd),                          inline: true },
-        { name: '💵 Total',     value: `**R$ ${valorTotal.toFixed(2)}**`,    inline: true },
-        { name: '⏰ Expira em', value: `<t:${expiraPix}:R>`,                 inline: true },
-        { name: '🎫 Ticket',    value: `\`${ticketId}\``,                    inline: true },
-        { name: '✋ Gerado por',value: `<@${interaction.user.id}>`,          inline: true },
+        { name: '📦 Produto',    value: produto,                             inline: true  },
+        { name: '💵 Valor',      value: `**R$ ${valorTotal.toFixed(2)}**`,   inline: true  },
+        { name: '⏰ Expira em',  value: `<t:${expiraPix}:R>`,                inline: true  },
+        { name: '🎫 Ticket',     value: `\`${ticketId}\``,                   inline: true  },
+        { name: '🆔 Pedido',     value: `\`${pedidoId.slice(0,8).toUpperCase()}\``, inline: true },
+        { name: '✋ Gerado por', value: `<@${atendente}>`,                   inline: true  },
         { name: '📋 Pix Copia e Cola', value: `\`\`\`${qr.qrcode}\`\`\`` },
       )
       .setImage(qr.imagemQrcode || qr.linkVisualizacao || null)
@@ -664,12 +697,11 @@ async function gerarPixAdmin(interaction, ticketId, produto, valorUnit, qtd, val
         .setStyle(ButtonStyle.Success),
     );
 
-    // Postar no canal (ephemeral: false)
     await interaction.channel.send({ embeds: [embed], components: [row] });
     await interaction.editReply({ embeds: [successEmbed('✅ QR Code PIX gerado no canal!')] });
 
-    // Polling automático
-    iniciarPollingAdminPix(cobr.txid, ticketId, interaction, produto, valorTotal, pedidoId);
+    // Polling automático — ao confirmar, marca pago e dispara log de vendas
+    iniciarPollingAdminPix(cobr.txid, ticketId, interaction, produto, valorTotal, pedidoId, atendente);
   } catch (err) {
     console.error('[PIX Admin]', err.message);
     return interaction.editReply({ embeds: [errorEmbed(`Erro ao gerar PIX: ${err.message}`)] });
@@ -685,21 +717,39 @@ async function verificarPagamentoAdminPix(interaction, txid, ticketId) {
       return interaction.editReply({ embeds: [new EmbedBuilder().setColor(config.colors.warning)
         .setDescription('⏳ Pagamento ainda não identificado. Tente em alguns segundos.')] });
     }
-    // Marcar como pago no canal
-    await marcarPagoPainel(interaction.channel, txid, ticketId);
+    await marcarPagoPainel(interaction.channel, txid, ticketId, interaction.client);
     return interaction.editReply({ embeds: [successEmbed('✅ Pagamento confirmado!')] });
   } catch (err) {
     return interaction.editReply({ embeds: [errorEmbed(`Erro: ${err.message}`)] });
   }
 }
 
-async function marcarPagoPainel(canal, txid, ticketId) {
-  // Atualiza a mensagem do QR no canal mostrando que foi pago
+async function marcarPagoPainel(canal, txid, ticketId, client) {
+  // Atualiza pedido no banco
   try {
-    const msgs = await canal.messages.fetch({ limit: 20 });
-    const qrMsg = msgs.find(m =>
-      m.author.bot &&
-      m.embeds.length > 0 &&
+    const { Pedidos, db: dbMain } = require('../database/database');
+    const pedido = dbMain.prepare("SELECT * FROM pedidos WHERE tx_id=?").get(txid);
+    if (pedido && pedido.status === 'pendente') {
+      dbMain.prepare("UPDATE pedidos SET status='pago', pago_em=strftime('%s','now') WHERE tx_id=?").run(txid);
+      // Disparar log de vendas com staff como "Vendido por"
+      if (client) {
+        try {
+          const { logVenda } = require('../utils/canalVendas');
+          const nota = pedido.nota_fiscal ? JSON.parse(pedido.nota_fiscal) : {};
+          await logVenda(client, { ...pedido, status: 'pago', metodo_pag: 'pix' }, {
+            atendente:   nota.geradoPor || null,
+            nomeProduto: null,
+          });
+        } catch (e) { console.error('[PIX Admin logVenda]', e.message); }
+      }
+    }
+  } catch (e) { console.error('[marcarPagoPainel DB]', e.message); }
+
+  // Atualiza a mensagem do QR no canal
+  try {
+    const msgs   = await canal.messages.fetch({ limit: 20 });
+    const qrMsg  = msgs.find(m =>
+      m.author.bot && m.embeds.length > 0 &&
       m.embeds[0]?.footer?.text?.includes('Aguardando pagamento') &&
       m.components?.length > 0 &&
       m.components[0]?.components?.[0]?.customId?.includes(txid)
@@ -720,9 +770,7 @@ async function marcarPagoPainel(canal, txid, ticketId) {
       .setTimestamp()
       .setFooter({ text: 'MrStore • Pagamento PIX' })],
   }).catch(() => {});
-}
-
-function iniciarPollingAdminPix(txid, ticketId, interaction, produto, valor, pedidoId) {
+function iniciarPollingAdminPix(txid, ticketId, interaction, produto, valor, pedidoId, atendente) {
   let tentativas = 0;
   const timer = setInterval(async () => {
     tentativas++;
@@ -731,7 +779,7 @@ function iniciarPollingAdminPix(txid, ticketId, interaction, produto, valor, ped
       const status = await efi.consultarCobranca(txid);
       if (status.pago) {
         clearInterval(timer);
-        await marcarPagoPainel(interaction.channel, txid, ticketId);
+        await marcarPagoPainel(interaction.channel, txid, ticketId, interaction.client);
       }
     } catch {}
     if (tentativas >= 36) clearInterval(timer);
