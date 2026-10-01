@@ -35,7 +35,7 @@ body::before{content:'';position:fixed;inset:0;z-index:0;background:radial-gradi
 .layout,.auth-bg{position:relative;z-index:1}
 ::-webkit-scrollbar{width:5px;height:5px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:#7c3aed40;border-radius:3px}
 .layout{display:flex;min-height:100vh}
-.sidebar{width:var(--sidebar-w);background:linear-gradient(180deg,#09091e 0%,#07071a 100%);border-right:1px solid var(--border2);display:flex;flex-direction:column;position:fixed;top:0;left:0;bottom:0;z-index:200;overflow-y:auto;box-shadow:4px 0 30px #7c3aed15}
+.sidebar{width:var(--sidebar-w);background:linear-gradient(180deg,#09091e 0%,#07071a 100%);border-right:1px solid var(--border2);display:flex;flex-direction:column;position:fixed;top:0;left:0;bottom:0;z-index:210;overflow-y:auto;box-shadow:4px 0 30px #7c3aed15}
 .sidebar-logo{padding:24px 20px 20px;border-bottom:1px solid var(--border);position:relative;overflow:hidden}
 .sidebar-logo .brand{font-size:22px;font-weight:900;letter-spacing:2px;background:linear-gradient(135deg,#c0a020,#f0c040,#a855f7);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;filter:drop-shadow(0 0 8px #c0a02060)}
 .sidebar-logo .sub{font-size:10px;color:#7070a0;margin-top:3px;letter-spacing:1px;text-transform:uppercase}
@@ -244,13 +244,15 @@ function toggleMenu(){
   o.style.display=open?'block':'none';
   h.textContent=open?'✕':'☰';
 }
-// Fechar menu ao clicar num link
+// Fechar menu ao clicar num link — com delay para a navegação acontecer primeiro
 document.querySelectorAll('.nav-item').forEach(a=>{
   a.addEventListener('click',()=>{
     if(window.innerWidth<=900){
-      document.getElementById('sidebar').classList.remove('open');
-      document.getElementById('sidebar-overlay').style.display='none';
-      document.getElementById('ham-btn').textContent='☰';
+      setTimeout(()=>{
+        document.getElementById('sidebar').classList.remove('open');
+        document.getElementById('sidebar-overlay').style.display='none';
+        document.getElementById('ham-btn').textContent='☰';
+      }, 150);
     }
   });
 });
