@@ -1,0 +1,7 @@
+node_modules/
+.env
+data/*.db
+data/authorized-members.json
+*.p12
+*.jfif
+*.log
