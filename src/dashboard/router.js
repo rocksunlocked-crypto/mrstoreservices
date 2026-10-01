@@ -424,6 +424,9 @@ router.post('/loja/finalizar', auth.middlewareAba('loja'), express.urlencoded({ 
 
   try {
     Usuarios.garantir(user.discord_id, user.username);
+    // Garantir que o discord_id está correto no banco
+    const discordIdUser = user.discord_id && user.discord_id !== '0' ? user.discord_id : null;
+    if (!discordIdUser) return res.redirect('/painel/loja?msg=pixerr');
     const variante = variante_id ? db.prepare('SELECT * FROM variantes_produto WHERE id=?').get(variante_id) : null;
     const produto  = db.prepare('SELECT * FROM produtos WHERE id=?').get(produto_id);
     if (!produto) return res.redirect('/painel/loja');
@@ -447,8 +450,9 @@ router.post('/loja/finalizar', auth.middlewareAba('loja'), express.urlencoded({ 
     const metodoDB = isStripe ? `stripe_${moeda.toLowerCase()}` : 'pix';
 
     const valorFinal = Math.max(0.01, (valor * qtd) - desconto);
+    const notaFiscal = JSON.stringify({ varianteId: variante_id || null, via: 'dashboard', qtd });
     const pedidoId = Pedidos.criar({
-      usuarioId: user.discord_id,
+      usuarioId: discordIdUser,
       produtoId: produto_id,
       quantidade: qtd,
       valorUnit:  valor,
@@ -457,6 +461,8 @@ router.post('/loja/finalizar', auth.middlewareAba('loja'), express.urlencoded({ 
       cupomUsado,
       metodoPag: metodoDB,
     });
+    // Salvar nota_fiscal com varianteId para processarEntrega encontrar o estoque
+    db.prepare("UPDATE pedidos SET nota_fiscal=? WHERE id=?").run(notaFiscal, pedidoId);
 
     if (cupomObj) Cupons.usar(cupomObj.id, user.discord_id, pedidoId);
 
@@ -639,32 +645,42 @@ async function confirmarPedidoDash(pedidoId, db) {
     const pedido = Pedidos.get(pedidoId);
     if (!pedido || pedido.status !== 'pendente') return;
 
+    // Marcar como pago
     db.prepare("UPDATE pedidos SET status='pago', pago_em=strftime('%s','now') WHERE id=?").run(pedidoId);
-    const u = Usuarios.get(pedido.usuario_id);
-    if (u) {
-      Usuarios.atualizar(pedido.usuario_id, {
-        total_gasto:   (u.total_gasto  || 0) + pedido.valor_total,
-        total_compras: (u.total_compras || 0) + 1,
-      });
-      Usuarios.addPontos(pedido.usuario_id, Math.floor(pedido.valor_total));
+
+    // Garantir usuário no banco
+    const dashUser = db.prepare('SELECT * FROM dash_usuarios WHERE discord_id=?').get(pedido.usuario_id);
+    if (!dashUser && pedido.usuario_id) Usuarios.garantir(pedido.usuario_id, pedido.usuario_id);
+
+    // Salvar varianteId na nota_fiscal para processarEntrega encontrar o estoque
+    const varianteId = pedido.nota_fiscal
+      ? (() => { try { return JSON.parse(pedido.nota_fiscal)?.varianteId; } catch { return null; } })()
+      : null;
+
+    // Se não tem varianteId na nota_fiscal, pegar da query de variantes do pedido
+    if (!varianteId) {
+      // Tentar pegar a primeira variante ativa do produto
+      const variante = db.prepare('SELECT id FROM variantes_produto WHERE produto_id=? AND ativo=1 ORDER BY ordem ASC LIMIT 1').get(pedido.produto_id);
+      if (variante) {
+        const nota = { varianteId: variante.id };
+        db.prepare("UPDATE pedidos SET nota_fiscal=? WHERE id=?").run(JSON.stringify(nota), pedidoId);
+      }
     }
 
+    // Entregar via processarEntrega (igual ao bot Discord)
     const clientRef = require('../utils/clientRef');
     const client    = clientRef.getClient();
     if (client) {
       const { processarEntrega } = require('../systems/loja');
-      await processarEntrega(Pedidos.get(pedidoId), client);
+      const pedidoAtualizado = Pedidos.get(pedidoId);
+      await processarEntrega(pedidoAtualizado, client);
     }
 
-    // Log de vendas com "Site" como vendedor
+    // Log de vendas com "Site"
     const { logVenda } = require('../utils/canalVendas');
-    const pedidoAtual = Pedidos.get(pedidoId);
-    if (client && pedidoAtual) {
-      await logVenda(client, { ...pedidoAtual, status: 'pago' }, {
-        atendente:   null,
-        nomeProduto: null,
-        vendidoPorCustom: '🌐 Site (dashboard)',
-      }).catch(() => {});
+    const pedidoFinal = Pedidos.get(pedidoId);
+    if (client && pedidoFinal) {
+      await logVenda(client, pedidoFinal, { vendidoPorCustom: '🌐 Site (dashboard)' }).catch(() => {});
     }
   } catch (e) { console.error('[Dashboard confirmarPedido]', e.message); }
 }
