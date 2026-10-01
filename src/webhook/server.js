@@ -22,7 +22,11 @@ app.use((req, res, next) => {
 });
 
 // ─── Dashboard ────────────────────────────────────────────────────────────────
-app.use('/dashboard', require('../dashboard/router'));
+const { initDashDB } = require('../dashboard/db');
+initDashDB();
+app.use('/painel', require('../dashboard/router'));
+// Redirecionar /dashboard para /painel (compatibilidade)
+app.get('/dashboard*', (req, res) => res.redirect(301, req.url.replace('/dashboard', '/painel')));
 
 // ─── Servir assets estáticos (thumbnail, etc.) ────────────────────────────────
 app.use('/assets', express.static(path.join(__dirname, '../../assets')));
