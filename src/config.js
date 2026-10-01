@@ -19,6 +19,8 @@ module.exports = {
     ticketTranscript: process.env.TICKET_TRANSCRIPT_CHANNEL || '1530046463927648368',
     // Canal onde o ARQUIVO HTML do transcript é enviado
     ticketHtml:       process.env.TICKET_HTML_CHANNEL       || '1545421003469885540',
+    // Canal onde o painel de tickets é postado
+    ticketPanel:      process.env.TICKET_PANEL_CHANNEL      || '1522587244614127676',
     verificacao:      process.env.VERIFICATION_CHANNEL_ID   || '1522464983537946785',
   },
 

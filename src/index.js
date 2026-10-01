@@ -263,6 +263,25 @@ client.once('ready', async () => {
       const { enviarHistoricoVendas } = require('./utils/canalVendas');
       await enviarHistoricoVendas(client);
 
+      // Enviar painel de tickets no canal configurado
+      try {
+        const canalPainel = guild.channels.cache.get(config.channels.ticketPanel);
+        if (canalPainel) {
+          const { buildTicketPanel } = require('./tickets/panelBuilder');
+          const { savePanel } = require('./database/ticketsDb');
+          // Deletar mensagem antiga do painel se existir
+          const msgs = await canalPainel.messages.fetch({ limit: 10 }).catch(() => null);
+          if (msgs) {
+            const painelAntigo = msgs.find(m => m.author.id === client.user.id && m.components?.length > 0);
+            if (painelAntigo) await painelAntigo.delete().catch(() => {});
+          }
+          const panel = buildTicketPanel();
+          const msg = await canalPainel.send(panel);
+          savePanel(canalPainel.id, msg.id, guild.id);
+          console.log(`✅ Painel de tickets enviado para #${canalPainel.name}`);
+        }
+      } catch (e) { console.error('[Init Painel Tickets]', e.message); }
+
       console.log('✅ Inicialização das vendas concluída.');
     } catch (e) { console.error('[Init Vendas]', e.message); }
   }, 3000);

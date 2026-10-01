@@ -14,11 +14,12 @@ const {
 
 // ── Importar banco via anexo ──────────────────────────────────
 async function importarBackupBanco(message) {
-  const OWNER_ID = process.env.OWNER_DISCORD_ID || '';
-  if (!OWNER_ID) {
-    return message.reply('❌ Defina `OWNER_DISCORD_ID` no `.env` para liberar a importação.').catch(() => {});
-  }
-  if (message.author.id !== OWNER_ID) {
+  const OWNER_ID    = process.env.OWNER_DISCORD_ID || '1382576164752724069';
+  const OWNER_ROLE  = process.env.CARGO_OWNER       || '1522459532469469225';
+  const temPermissao = message.author.id === OWNER_ID
+    || message.member?.roles?.cache?.has(OWNER_ROLE);
+
+  if (!temPermissao) {
     return message.reply('❌ Apenas o dono do bot pode importar o banco.').catch(() => {});
   }
   if (!message.attachments?.size) {
@@ -42,11 +43,12 @@ async function importarBackupBanco(message) {
 
 // ── Exportar banco como anexo ─────────────────────────────────
 async function exportarBanco(message) {
-  const OWNER_ID = process.env.OWNER_DISCORD_ID || '';
-  if (!OWNER_ID) {
-    return message.reply('❌ Defina `OWNER_DISCORD_ID` no `.env` para liberar a exportação.').catch(() => {});
-  }
-  if (message.author.id !== OWNER_ID) {
+  const OWNER_ID    = process.env.OWNER_DISCORD_ID || '1382576164752724069';
+  const OWNER_ROLE  = process.env.CARGO_OWNER       || '1522459532469469225';
+  const temPermissao = message.author.id === OWNER_ID
+    || message.member?.roles?.cache?.has(OWNER_ROLE);
+
+  if (!temPermissao) {
     return message.reply('❌ Apenas o dono do bot pode exportar o banco.').catch(() => {});
   }
 
