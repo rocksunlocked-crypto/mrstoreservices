@@ -639,7 +639,7 @@ const Pedidos = {
 
 const Cupons = {
   get: (codigo) => db.prepare('SELECT * FROM cupons WHERE codigo = ? AND ativo = 1').get(codigo.toUpperCase()),
-  validar: (codigo, usuarioId, valor, painelId = null) => {
+  validar: (codigo, usuarioId, valor, painelId = null, member = null) => {
     const c = Cupons.get(codigo);
     if (!c) return { valido: false, erro: '❌ Cupom inválido ou inexistente.' };
     if (c.usos_atual >= c.usos_max) return { valido: false, erro: '❌ Cupom esgotado.' };
@@ -661,6 +661,13 @@ const Cupons = {
           return { valido: false, erro: '❌ Este cupom não é válido para este produto.' };
         }
       } catch {}
+    }
+
+    // Verificar restrição por cargo (member opcional)
+    if (c.cargo_id && member) {
+      if (!member.roles?.cache?.has(c.cargo_id)) {
+        return { valido: false, erro: `❌ Este cupom é exclusivo para o cargo <@&${c.cargo_id}>.` };
+      }
     }
 
     return { valido: true, cupom: c };

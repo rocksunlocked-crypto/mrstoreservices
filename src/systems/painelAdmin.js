@@ -457,7 +457,7 @@ function buildPublic2FAPanel() {
   const embed = new EmbedBuilder()
     .setColor(0x444d59)
     .setTitle('🔐 Rockstar 2FA Center')
-    .setDescription('Central segura para geração de códigos 2FA Rockstar\n**Sistema operacional · Aspect Software · discord.gg/satzx**')
+    .setDescription('Central segura para geração de códigos 2FA Rockstar\n**Sistema operacional · MrStore**')
     .addFields(
       { name: '📡 Status', value: '🟢 Online', inline: true },
       { name: '🔒 Resposta', value: 'Privada', inline: true },
@@ -468,7 +468,7 @@ function buildPublic2FAPanel() {
       { name: '👥 Usuários únicos', value: '390', inline: true },
     )
     .setTimestamp()
-    .setFooter({ text: 'Aspect Software • discord.gg/satzx' });
+    .setFooter({ text: 'MrStore • Sistema 2FA' });
 
   const row1 = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
