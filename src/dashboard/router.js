@@ -714,36 +714,36 @@ async function confirmarPedidoDash(pedidoId, dbIn) {
       Usuarios.addPontos(pedido.usuario_id, Math.floor(pedido.valor_total));
     }
 
-    // Enviar DM no Discord
+    // Enviar DM e log no Discord
     const clientRef = require('../utils/clientRef');
     const client    = clientRef.getClient();
     if (client && pedido.usuario_id && pedido.usuario_id !== '0') {
+      // DM para o usuário — usa client.users.fetch() que não precisa do guild
       try {
-        // Buscar em todos os guilds onde o bot está
-        let member = null;
-        for (const [, guild] of client.guilds.cache) {
-          member = await guild.members.fetch(pedido.usuario_id).catch(() => null);
-          if (member) break;
-        }
-
-        if (member) {
+        const discordUser = await client.users.fetch(pedido.usuario_id).catch(() => null);
+        if (discordUser) {
           const { EmbedBuilder } = require('discord.js');
           const embed = new EmbedBuilder()
             .setColor(0x00ff88)
             .setTitle('✅ Produto Entregue!')
-            .setDescription(`Seu pedido foi confirmado e o produto foi entregue!\n\n**Produto:** ${produto.nome}\n**Valor:** R$ ${Number(pedido.valor_total).toFixed(2)}`)
+            .setDescription(
+              `Sua compra foi confirmada!\n\n` +
+              `**Produto:** ${produto.nome}\n` +
+              `**Valor:** R$ ${Number(pedido.valor_total).toFixed(2)}\n\n` +
+              `> 📋 Você também pode ver este produto na aba **Perfil** do site.`
+            )
             .addFields({ name: '📦 Conteúdo', value: `\`\`\`${conteudo.slice(0, 1000)}\`\`\`` })
             .setTimestamp()
-            .setFooter({ text: 'MrStore • Obrigado pela compra!' });
-          await member.send({ embeds: [embed] }).catch(() => {});
+            .setFooter({ text: 'MrStore • Obrigado pela compra! 🛍️' });
+          await discordUser.send({ embeds: [embed] }).catch(e => console.warn('[DashDM] DMs fechadas:', e.message));
         }
       } catch (e) { console.error('[DashDM]', e.message); }
 
-      // Log de vendas
+      // Log de vendas no canal
       try {
         const { logVenda } = require('../utils/canalVendas');
         const pedidoFinal = db.prepare('SELECT * FROM pedidos WHERE id=?').get(pedidoId);
-        await logVenda(client, pedidoFinal, { vendidoPorCustom: '🌐 Site (dashboard)' }).catch(() => {});
+        await logVenda(client, pedidoFinal, { vendidoPorCustom: '🌐 Site (dashboard)' });
       } catch (e) { console.error('[DashLogVenda]', e.message); }
     }
 
@@ -1439,7 +1439,7 @@ router.get('/perfil', auth.requireAuth, (req, res) => {
     ${msg === 'ok' ? `<div class="alert alert-success">✅ Senha alterada com sucesso!</div>` : ''}
     ${msg === 'err' ? `<div class="alert alert-error">❌ Senha atual incorreta.</div>` : ''}
 
-    <div style="display:grid;grid-template-columns:300px 1fr;gap:24px;margin-bottom:28px">
+    <div style="display:grid;grid-template-columns:min(300px,100%) 1fr;gap:24px;margin-bottom:28px;align-items:start">
       <div class="stat-card" style="--glow-a:${ci.color.replace('#','')};--glow-b:7c3aed">
         <div style="text-align:center;padding:10px 0">
           <div style="width:72px;height:72px;border-radius:50%;background:linear-gradient(135deg,var(--accent),var(--blue));display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:800;margin:0 auto 14px">${user.username[0].toUpperCase()}</div>
@@ -1467,7 +1467,7 @@ router.get('/perfil', auth.requireAuth, (req, res) => {
       </div>
     </div>
 
-    <div style="display:grid;grid-template-columns:1fr 340px;gap:24px">
+    <div style="display:grid;grid-template-columns:1fr min(340px,100%);gap:24px">
       <div class="table-card">
         <div class="table-head"><span class="table-title">🛍️ Últimas Compras</span></div>
         <table>

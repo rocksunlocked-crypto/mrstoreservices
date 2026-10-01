@@ -24,10 +24,11 @@ function formatarMetodo(metodo) {
 // Enviar log de venda no canal
 async function logVenda(client, pedido, extras = {}) {
   try {
-    const guild = client.guilds.cache.first();
-    if (!guild) return;
-    const canal = guild.channels.cache.get(CANAL_VENDAS_LOG);
-    if (!canal) return;
+    if (!client) { console.warn('[CanalVendas] client não disponível'); return; }
+
+    // Busca direta pelo ID — funciona mesmo que o canal não esteja no cache
+    const canal = await client.channels.fetch(CANAL_VENDAS_LOG).catch(() => null);
+    if (!canal) { console.warn('[CanalVendas] Canal', CANAL_VENDAS_LOG, 'não encontrado'); return; }
 
     const { db } = require('../database/database');
 
@@ -83,9 +84,8 @@ async function logVenda(client, pedido, extras = {}) {
 // Enviar histórico de vendas anteriores (chamado no startup)
 async function enviarHistoricoVendas(client) {
   try {
-    const guild = client.guilds.cache.first();
-    if (!guild) return;
-    const canal = guild.channels.cache.get(CANAL_VENDAS_LOG);
+    if (!client) return;
+    const canal = await client.channels.fetch(CANAL_VENDAS_LOG).catch(() => null);
     if (!canal) return;
 
     const { db } = require('../database/database');
