@@ -22,8 +22,7 @@ app.use((req, res, next) => {
 });
 
 // ─── Dashboard ────────────────────────────────────────────────────────────────
-const { initDashDB } = require('../dashboard/db');
-initDashDB();
+// initDashDB é chamado no start() após o banco principal estar pronto
 app.use('/painel', require('../dashboard/router'));
 // Redirecionar /dashboard para /painel (compatibilidade)
 app.get('/dashboard*', (req, res) => res.redirect(301, req.url.replace('/dashboard', '/painel')));
@@ -166,6 +165,13 @@ app.get('/health', (req, res) => res.json({ ok: true }));
 async function start(client) {
   _client = client;
   const port = process.env.PORT || config.webhook.port;
+
+  // Inicializar banco do dashboard (após o banco principal estar pronto)
+  try {
+    const { initDashDB } = require('../dashboard/db');
+    initDashDB();
+  } catch (e) { console.error('[Dashboard DB]', e.message); }
+
   return new Promise((resolve) => {
     const server = app.listen(port, () => {
       console.log(`🌐 Servidor webhook rodando na porta ${port}`);
