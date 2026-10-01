@@ -979,16 +979,22 @@ router.post('/solicitacoes/:id/aprovar', auth.middlewareAba('solicitacoes'), asy
           // Notificar no Discord via DM
           const clientRef = require('../utils/clientRef');
           const client    = clientRef.getClient();
-          if (client && conteudoFinal) {
-            const member = await client.guilds.cache.first()?.members.fetch(solicitante.discord_id).catch(() => null);
-            if (member) {
-              const { EmbedBuilder } = require('discord.js');
-              await member.send({ embeds: [new EmbedBuilder()
-                .setColor(0x00ff88)
-                .setTitle('✅ Solicitação Aprovada!')
-                .setDescription(`Sua solicitação de **${qtd}x ${produto.nome}** foi aprovada.\n\n**Produto:**\`\`\`${conteudoFinal.slice(0, 1500)}\`\`\``)
-                .setTimestamp()] }).catch(() => {});
-            }
+          console.log(`[SolicDM] client=${!!client} discord_id=${solicitante.discord_id} conteudo=${!!conteudoFinal}`);
+          if (client && solicitante.discord_id && solicitante.discord_id !== '0') {
+            try {
+              // Buscar usuário pelo ID direto — mais confiável que guild.members
+              const discordUser = await client.users.fetch(solicitante.discord_id).catch(e => { console.warn('[SolicDM] fetch error:', e.message); return null; });
+              console.log(`[SolicDM] discordUser=${!!discordUser}`);
+              if (discordUser) {
+                const { EmbedBuilder } = require('discord.js');
+                const embedContent = conteudoFinal || '(produto entregue — veja na aba Perfil do site)';
+                await discordUser.send({ embeds: [new EmbedBuilder()
+                  .setColor(0x00ff88)
+                  .setTitle('✅ Solicitação Aprovada!')
+                  .setDescription(`Sua solicitação de **${qtd}x ${produto.nome}** foi aprovada.\n\n**Produto:**\n\`\`\`${embedContent.slice(0, 1500)}\`\`\``)
+                  .setTimestamp()] }).catch(e => console.warn('[SolicDM] send error:', e.message));
+              }
+            } catch (e) { console.error('[SolicDM]', e.message); }
           }
         }
       }
