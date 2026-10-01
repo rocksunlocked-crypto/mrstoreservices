@@ -402,7 +402,19 @@ async function atualizarPainelProduto(guild, painelId) {
     const canal = guild.channels.cache.get(painel.canal_id);
     if (!canal) return;
 
-    const msg = await canal.messages.fetch(painel.mensagem_id);
+    // Tentar buscar a mensagem — se não existir mais, limpar o ID do banco e sair
+    let msg;
+    try {
+      msg = await canal.messages.fetch(painel.mensagem_id);
+    } catch (e) {
+      if (e.code === 10008) {
+        // Mensagem deletada — limpar mensagem_id para não tentar novamente
+        db.prepare("UPDATE paineis_canal SET mensagem_id=NULL WHERE id=?").run(painelId);
+        console.log(`[PainelProduto] Mensagem ${painel.mensagem_id} não encontrada — ID limpo.`);
+        return;
+      }
+      throw e;
+    }
 
     const cor = parseInt(painel.cor || 'FF6B6B', 16);
     const isCoins = produto?.nome?.toLowerCase().includes('coin') || produto?.tipo === 'coins';
