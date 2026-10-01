@@ -230,25 +230,14 @@ client.once('ready', async () => {
   setTimeout(async () => {
     try {
       if (!guild) return;
-      const { enviarPainelFixo, enviarPainelPublico2FA } = require('./systems/painelAdmin');
-      const { enviarEmbedResgate }     = require('./systems/codigosCoins');
-      const { listarCaixasAtivas, enviarEmbedCaixasCanal } = require('./systems/caixaMisteriosa');
+      const { atualizarPainelAdmin } = require('./systems/painelAdmin');
       const { atualizarPainelProduto } = require('./systems/painelProduto');
       const { db }                     = require('./database/database');
 
-      await enviarPainelFixo(guild);
-      await enviarPainelPublico2FA(guild);
-      await enviarEmbedResgate(guild, config.channels.logs);
+      // Apenas ATUALIZAR o painel admin já existente (não repostar)
+      await atualizarPainelAdmin(guild);
 
-      const caixasAtivas = listarCaixasAtivas().filter(c => c.canal_id);
-      const canaisVistos = new Set();
-      for (const c of caixasAtivas) {
-        if (!canaisVistos.has(c.canal_id)) {
-          canaisVistos.add(c.canal_id);
-          await enviarEmbedCaixasCanal(guild, c.canal_id).catch(() => {});
-        }
-      }
-
+      // Apenas ATUALIZAR painéis de produto já existentes (não repostar)
       const paineis = db.prepare('SELECT * FROM paineis_canal WHERE ativo=1 AND mensagem_id IS NOT NULL').all();
       console.log(`🔄 Atualizando ${paineis.length} painel(is) de produto...`);
       for (const p of paineis) {
@@ -256,31 +245,11 @@ client.once('ready', async () => {
         await new Promise(r => setTimeout(r, 300));
       }
 
-      const { inicializarTabela, enviarEmbedCanalAfiliados } = require('./systems/afiliados');
+      const { inicializarTabela } = require('./systems/afiliados');
       inicializarTabela();
-      await enviarEmbedCanalAfiliados(guild);
 
       const { enviarHistoricoVendas } = require('./utils/canalVendas');
       await enviarHistoricoVendas(client);
-
-      // Enviar painel de tickets no canal configurado
-      try {
-        const canalPainel = guild.channels.cache.get(config.channels.ticketPanel);
-        if (canalPainel) {
-          const { buildTicketPanel } = require('./tickets/panelBuilder');
-          const { savePanel } = require('./database/ticketsDb');
-          // Deletar mensagem antiga do painel se existir
-          const msgs = await canalPainel.messages.fetch({ limit: 10 }).catch(() => null);
-          if (msgs) {
-            const painelAntigo = msgs.find(m => m.author.id === client.user.id && m.components?.length > 0);
-            if (painelAntigo) await painelAntigo.delete().catch(() => {});
-          }
-          const panel = buildTicketPanel();
-          const msg = await canalPainel.send(panel);
-          savePanel(canalPainel.id, msg.id, guild.id);
-          console.log(`✅ Painel de tickets enviado para #${canalPainel.name}`);
-        }
-      } catch (e) { console.error('[Init Painel Tickets]', e.message); }
 
       console.log('✅ Inicialização das vendas concluída.');
     } catch (e) { console.error('[Init Vendas]', e.message); }

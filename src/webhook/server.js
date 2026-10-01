@@ -10,6 +10,20 @@ const { entregarProduto } = require('../systems/loja');
 const app = express();
 app.use(express.json());
 
+// ─── Cookies (necessário para o dashboard) ────────────────────────────────────
+app.use((req, res, next) => {
+  req.cookies = {};
+  const raw = req.headers.cookie || '';
+  raw.split(';').forEach(p => {
+    const [k, ...v] = p.trim().split('=');
+    if (k) req.cookies[k.trim()] = v.join('=').trim();
+  });
+  next();
+});
+
+// ─── Dashboard ────────────────────────────────────────────────────────────────
+app.use('/dashboard', require('../dashboard/router'));
+
 // ─── Servir assets estáticos (thumbnail, etc.) ────────────────────────────────
 app.use('/assets', express.static(path.join(__dirname, '../../assets')));
 

@@ -114,9 +114,13 @@ async function buildHome(member) {
     btn('pa_menu_afiliados', '🤝 Afiliados',   ButtonStyle.Secondary),
   ));
 
-  // Row 3 — Config
+  // Row 3 — Config + Dashboard
   rows.push(new ActionRowBuilder().addComponents(
     btn('pa_menu_config',    '🔧 Config',      ButtonStyle.Secondary),
+    new ButtonBuilder()
+      .setLabel('🌐 Dashboard')
+      .setStyle(ButtonStyle.Link)
+      .setURL(`${process.env.BOT_URL || 'http://localhost:3000'}/dashboard`),
   ));
 
   return { embed, components: rows };
