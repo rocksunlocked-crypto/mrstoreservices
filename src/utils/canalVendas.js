@@ -38,8 +38,9 @@ async function logVenda(client, pedido, extras = {}) {
 
     // Determinar quem vendeu
     let vendidoPor = '🤖 Bot (automático)';
-    if (extras.atendente) vendidoPor = `👤 <@${extras.atendente}> (staff)`;
-    else if (afiliado)    vendidoPor = `🤝 Afiliado: **${afiliado.nome || afiliado.discord_id}** (\`${afiliado.codigo_afil || '—'}\`)`;
+    if (extras.vendidoPorCustom) vendidoPor = extras.vendidoPorCustom;
+    else if (extras.atendente)   vendidoPor = `👤 <@${extras.atendente}> (staff)`;
+    else if (afiliado)           vendidoPor = `🤝 Afiliado: **${afiliado.nome || afiliado.discord_id}** (\`${afiliado.codigo_afil || '—'}\`)`;
 
     // Cashback recebido (apenas se não foi coins)
     const metodo = pedido.metodo_pag || '';

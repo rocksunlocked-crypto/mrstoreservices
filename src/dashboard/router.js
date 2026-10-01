@@ -247,46 +247,86 @@ router.get('/', auth.middlewareAba('overview'), (req, res) => {
 router.get('/loja', auth.middlewareAba('loja'), (req, res) => {
   const { db } = getMainDb();
   const user   = req.dashUser;
-  const search = req.query.q || '';
+  const search = req.query.q   || '';
+  const catFiltro = req.query.cat || '';
   const msg    = req.query.msg || '';
 
-  const where = search ? `WHERE p.nome LIKE '%${search.replace(/'/g,"''")}%' AND p.ativo=1` : 'WHERE p.ativo=1';
+  // Buscar categorias disponíveis
+  const categorias = db.prepare("SELECT DISTINCT categoria FROM produtos WHERE ativo=1 AND categoria IS NOT NULL ORDER BY categoria ASC").all().map(r => r.categoria).filter(Boolean);
+
+  // Query com filtro de categoria e busca
+  let whereParts = ['p.ativo=1'];
+  if (search)    whereParts.push(`p.nome LIKE '%${search.replace(/'/g,"''")}%'`);
+  if (catFiltro) whereParts.push(`p.categoria='${catFiltro.replace(/'/g,"''")}'`);
+  const where = 'WHERE ' + whereParts.join(' AND ');
+
   const prods = db.prepare(`
     SELECT p.*, COUNT(v.id) as variantes
     FROM produtos p
     LEFT JOIN variantes_produto v ON v.produto_id=p.id AND v.ativo=1
-    ${where} GROUP BY p.id ORDER BY p.destaque DESC, p.vendas DESC
+    ${where} GROUP BY p.id ORDER BY p.categoria ASC, p.destaque DESC, p.vendas DESC
   `).all();
 
-  const cards = prods.map(p => {
-    const variantes = db.prepare('SELECT * FROM variantes_produto WHERE produto_id=? AND ativo=1 ORDER BY ordem ASC').all(p.id);
-    const varOptions = variantes.length
-      ? `<select class="form-control" name="variante_id" style="margin-bottom:10px;font-size:12px">
-          ${variantes.map(v => `<option value="${v.id}">${v.nome} — ${fmtMoeda(v.preco)}</option>`).join('')}
-         </select>`
-      : '';
-    const precoMin = variantes.length ? Math.min(...variantes.map(v => v.preco)) : p.preco;
+  // Agrupar por categoria
+  const grupos = {};
+  for (const p of prods) {
+    const cat = p.categoria || 'Geral';
+    if (!grupos[cat]) grupos[cat] = [];
+    grupos[cat].push(p);
+  }
 
-    return `<div class="produto-card">
-      <div class="produto-img">${p.imagem_url ? `<img src="${p.imagem_url}" alt="${p.nome}" loading="lazy">` : '📦'}</div>
-      <div class="produto-body">
-        <div class="produto-nome">${p.nome}</div>
-        <div class="produto-preco">${fmtMoeda(precoMin)}${variantes.length > 1 ? '<span style="font-size:11px;color:#7878a0"> em diante</span>' : ''}</div>
-        <div class="produto-desc">${p.descricao || ''}</div>
-        ${varOptions}
-        <a href="/painel/loja/comprar/${p.id}" class="btn btn-primary" style="width:100%;font-size:12px">🛒 Comprar</a>
-      </div>
-    </div>`;
-  }).join('');
+  function imgTag(url, nome) {
+    if (!url) return '<div style="width:100%;height:150px;background:linear-gradient(135deg,#12122a,#1a1a35);display:flex;align-items:center;justify-content:center;font-size:48px">📦</div>';
+    // Usar proxy para imagens Discord CDN que expiram
+    const src = url.includes('cdn.discordapp.com/attachments') ? `https://images.weserv.nl/?url=${encodeURIComponent(url)}&w=400&output=webp` : url;
+    return `<img src="${src}" alt="${nome}" loading="lazy" style="width:100%;height:150px;object-fit:cover" onerror="this.parentElement.innerHTML='<div style=\\'width:100%;height:150px;background:linear-gradient(135deg,#12122a,#1a1a35);display:flex;align-items:center;justify-content:center;font-size:48px\\'>📦</div>'">`;
+  }
+
+  const catTabs = ['', ...categorias].map(c =>
+    `<a href="/painel/loja?cat=${encodeURIComponent(c)}&q=${encodeURIComponent(search)}" class="btn btn-sm ${catFiltro===c?'btn-primary':'btn-ghost'}">${c||'🛍️ Todos'}</a>`
+  ).join('');
+
+  let lojaHtml = '';
+  for (const [cat, catProds] of Object.entries(grupos)) {
+    const cards = catProds.map(p => {
+      const variantes = db.prepare('SELECT * FROM variantes_produto WHERE produto_id=? AND ativo=1 ORDER BY ordem ASC').all(p.id);
+      const precoMin  = variantes.length ? Math.min(...variantes.map(v => v.preco)) : p.preco;
+      return `<div class="produto-card" onclick="window.location='/painel/loja/comprar/${p.id}'">
+        <div class="produto-img">${imgTag(p.imagem_url, p.nome)}</div>
+        <div class="produto-body">
+          <div class="produto-nome">${p.nome}</div>
+          <div class="produto-preco">${fmtMoeda(precoMin)}${variantes.length > 1 ? '<span style="font-size:11px;color:#7070a0"> em diante</span>' : ''}</div>
+          <div class="produto-desc">${p.descricao || ''}</div>
+          <a href="/painel/loja/comprar/${p.id}" class="btn btn-primary" style="width:100%;font-size:12px" onclick="event.stopPropagation()">🛒 Comprar</a>
+        </div>
+      </div>`;
+    }).join('');
+    lojaHtml += `
+      <div style="margin-bottom:32px">
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
+          <div style="height:2px;flex:0 0 24px;background:linear-gradient(90deg,#7c3aed,transparent)"></div>
+          <span style="font-size:16px;font-weight:800;color:#fff;text-transform:uppercase;letter-spacing:1px">${cat}</span>
+          <div style="height:2px;flex:1;background:linear-gradient(90deg,#7c3aed20,transparent)"></div>
+        </div>
+        <div class="produtos-grid">${cards}</div>
+      </div>`;
+  }
+
+  const msgAlerts = {
+    ok: alert('success', '✅ Pedido realizado! Acompanhe em Perfil.'),
+    pixerr: alert('error', '❌ Erro ao gerar PIX. Tente novamente.'),
+  };
 
   const body = `
-    ${msg === 'ok' ? alert('success', '✅ Pedido realizado! Acompanhe em Pedidos.') : ''}
-    <div class="search-row">
-      <form method="GET">
-        <input class="form-control" name="q" value="${search}" placeholder="Buscar produto..." style="width:280px">
+    ${msgAlerts[msg] || ''}
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:20px">
+      <form method="GET" style="display:flex;gap:8px;flex:1">
+        <input class="form-control" name="q" value="${search}" placeholder="Buscar produto..." style="max-width:280px">
+        <input type="hidden" name="cat" value="${catFiltro}">
       </form>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">${catTabs}</div>
     </div>
-    ${prods.length ? `<div class="produtos-grid">${cards}</div>` : '<div style="text-align:center;color:#7878a0;padding:48px">Nenhum produto disponível</div>'}`;
+    ${lojaHtml || '<div style="text-align:center;color:#7070a0;padding:64px;font-size:18px">📦 Nenhum produto disponível</div>'}`;
 
   res.send(layout(user, '🛍️ Loja', body, 'loja'));
 });
@@ -300,46 +340,87 @@ router.get('/loja/comprar/:produtoId', auth.middlewareAba('loja'), (req, res) =>
   const variantes = db.prepare('SELECT * FROM variantes_produto WHERE produto_id=? AND ativo=1 ORDER BY ordem ASC').all(prod.id);
   const varOptions = variantes.map(v => {
     const disp = db.prepare('SELECT COUNT(*) as c FROM estoque_variante WHERE variante_id=? AND usado=0').get(v.id)?.c || 0;
-    return `<option value="${v.id}" ${disp===0?'disabled':''}>
-      ${v.nome} — ${fmtMoeda(v.preco)} ${disp===0?'(sem estoque)':'('+disp+' disp.)'}
-    </option>`;
+    return `<option value="${v.id}" ${disp===0?'disabled':''}>${v.nome} — ${fmtMoeda(v.preco)} ${disp===0?'(sem estoque)':'('+disp+' disp.)'}</option>`;
   }).join('');
+
+  // Stripe disponível?
+  const stripeOk = !!process.env.STRIPE_SECRET_KEY;
+  const MOEDAS_STRIPE = { USD:'🇺🇸 USD', EUR:'🇪🇺 EUR', GBP:'🇬🇧 GBP', BRL:'🇧🇷 BRL' };
+
+  const imgSrc = prod.imagem_url
+    ? (prod.imagem_url.includes('cdn.discordapp.com/attachments')
+        ? `https://images.weserv.nl/?url=${encodeURIComponent(prod.imagem_url)}&w=600&output=webp`
+        : prod.imagem_url)
+    : null;
 
   const body = `
     <a href="/painel/loja" class="btn btn-ghost btn-sm" style="margin-bottom:20px">← Voltar</a>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-top:16px">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:28px;margin-top:16px">
       <div>
-        ${prod.imagem_url ? `<img src="${prod.imagem_url}" style="width:100%;border-radius:12px;border:1px solid var(--border)">` : `<div style="width:100%;height:200px;background:var(--card2);border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:60px">📦</div>`}
+        ${imgSrc
+          ? `<img src="${imgSrc}" style="width:100%;border-radius:14px;border:1px solid var(--border2)" onerror="this.style.display='none'">`
+          : `<div style="width:100%;height:220px;background:linear-gradient(135deg,#12122a,#1a1a35);border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:64px">📦</div>`}
+        <div style="margin-top:16px;padding:16px;background:var(--card2);border:1px solid var(--border);border-radius:12px">
+          <div style="font-size:12px;color:#7070a0;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Categoria</div>
+          <div style="font-weight:600">${prod.categoria || 'Geral'}</div>
+        </div>
       </div>
       <div>
-        <h2 style="font-size:22px;font-weight:800;margin-bottom:8px">${prod.nome}</h2>
-        <p style="color:#7878a0;margin-bottom:20px">${prod.descricao || ''}</p>
-        <form method="POST" action="/painel/loja/finalizar">
+        <h2 style="font-size:24px;font-weight:900;margin-bottom:8px;background:linear-gradient(135deg,#fff,#c4b5fd);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text">${prod.nome}</h2>
+        <p style="color:#7070a0;margin-bottom:20px;line-height:1.6">${prod.descricao || ''}</p>
+        <form method="POST" action="/painel/loja/finalizar" id="form-compra">
           <input type="hidden" name="produto_id" value="${prod.id}">
+          <input type="hidden" name="metodo_pag" id="input-metodo" value="pix">
+          ${variantes.length ? `<div class="form-group"><label>Variante / Plano</label><select class="form-control" name="variante_id" required>${varOptions}</select></div>` : ''}
           <div class="form-group">
-            <label>Variante / Plano</label>
-            <select class="form-control" name="variante_id" required>${varOptions || `<option value="">Sem variantes</option>`}</select>
+            <label>Quantidade</label>
+            <div style="display:flex;align-items:center;gap:10px">
+              <button type="button" onclick="ajustarQtd(-1)" class="btn btn-ghost btn-sm" style="width:36px;height:36px;padding:0;font-size:18px">−</button>
+              <input class="form-control" type="number" name="quantidade" id="inp-qtd" value="1" min="1" max="99" style="width:80px;text-align:center">
+              <button type="button" onclick="ajustarQtd(1)" class="btn btn-ghost btn-sm" style="width:36px;height:36px;padding:0;font-size:18px">+</button>
+            </div>
           </div>
           <div class="form-group">
             <label>Cupom (opcional)</label>
             <input class="form-control" name="cupom" placeholder="Código do cupom">
           </div>
-          <div class="form-group">
-            <label>Observação</label>
-            <textarea class="form-control" name="obs" rows="2" placeholder="Alguma observação?"></textarea>
+          <div style="margin-bottom:18px">
+            <div style="font-size:11px;color:#7070a0;font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">Forma de Pagamento</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+              <button type="button" onclick="selecionarPag('pix',this)" class="btn btn-success pag-btn pag-ativo" style="font-size:12px">💠 PIX (R$)</button>
+              ${stripeOk ? Object.entries(MOEDAS_STRIPE).map(([m,l]) =>
+                `<button type="button" onclick="selecionarPag('stripe_${m.toLowerCase()}',this)" class="btn btn-ghost pag-btn" style="font-size:12px">${l}</button>`
+              ).join('') : ''}
+            </div>
           </div>
-          <button class="btn btn-primary" style="width:100%" type="submit">💳 Finalizar Pedido</button>
+          <button class="btn btn-primary" style="width:100%;padding:12px;font-size:15px;font-weight:800" type="submit">🛒 Finalizar Compra</button>
         </form>
       </div>
-    </div>`;
+    </div>
+    <script>
+    function selecionarPag(metodo, btn) {
+      document.getElementById('input-metodo').value = metodo;
+      document.querySelectorAll('.pag-btn').forEach(b => b.classList.remove('pag-ativo','btn-success','btn-primary'));
+      document.querySelectorAll('.pag-btn').forEach(b => b.classList.add('btn-ghost'));
+      btn.classList.remove('btn-ghost');
+      btn.classList.add(metodo==='pix'?'btn-success':'btn-primary','pag-ativo');
+    }
+    function ajustarQtd(delta) {
+      const inp = document.getElementById('inp-qtd');
+      let v = parseInt(inp.value) + delta;
+      inp.value = Math.max(1, Math.min(99, v));
+    }
+    </script>
+    <style>.pag-ativo{box-shadow:0 0 12px rgba(124,58,237,.4)!important}</style>`;
 
   res.send(layout(user, `🛍️ ${prod.nome}`, body, 'loja'));
 });
 
 router.post('/loja/finalizar', auth.middlewareAba('loja'), express.urlencoded({ extended: false }), async (req, res) => {
-  const { produto_id, variante_id, cupom, obs } = req.body;
+  const { produto_id, variante_id, cupom, metodo_pag, quantidade } = req.body;
   const user = req.dashUser;
   const { db, Usuarios, Pedidos, Cupons } = getMainDb();
+  const qtd = Math.max(1, Math.min(99, parseInt(quantidade) || 1));
 
   try {
     Usuarios.garantir(user.discord_id, user.username);
@@ -361,21 +442,39 @@ router.post('/loja/finalizar', auth.middlewareAba('loja'), express.urlencoded({ 
       }
     }
 
-    const valorFinal = Math.max(0.01, valor - desconto);
-    const pedidoId   = Pedidos.criar({
+    const isStripe = metodo_pag?.startsWith('stripe_');
+    const moeda    = isStripe ? metodo_pag.replace('stripe_', '').toUpperCase() : 'BRL';
+    const metodoDB = isStripe ? `stripe_${moeda.toLowerCase()}` : 'pix';
+
+    const valorFinal = Math.max(0.01, (valor * qtd) - desconto);
+    const pedidoId = Pedidos.criar({
       usuarioId: user.discord_id,
       produtoId: produto_id,
-      quantidade: 1,
+      quantidade: qtd,
       valorUnit:  valor,
       valorTotal: valorFinal,
       desconto,
       cupomUsado,
-      metodoPag: 'pix',
+      metodoPag: metodoDB,
     });
 
     if (cupomObj) Cupons.usar(cupomObj.id, user.discord_id, pedidoId);
 
-    // Gerar cobrança PIX
+    if (isStripe) {
+      const stripe = require('../systems/stripe');
+      const sess   = await stripe.criarCheckout({
+        valorBrl:  valorFinal,
+        descricao: `${produto.nome}${variante ? ' — ' + variante.nome : ''} | MrStore`,
+        pedidoId,
+        moeda,
+        metodo:    'card',
+      });
+      db.prepare("UPDATE pedidos SET tx_id=? WHERE id=?").run(sess.sessionId, pedidoId);
+      iniciarPollingPedidoDash(pedidoId, null, user, produto, variante_id, sess.sessionId);
+      return res.redirect(sess.linkPagar);
+    }
+
+    // PIX EFI
     const efi  = require('../systems/efi');
     const cobr = await efi.criarCobrancaPix({
       valor:       valorFinal,
@@ -384,16 +483,11 @@ router.post('/loja/finalizar', auth.middlewareAba('loja'), express.urlencoded({ 
       nomeCliente: user.username,
     });
     const qr = await efi.gerarQRCode(cobr.locId);
-
-    // Salvar txid no pedido
     db.prepare("UPDATE pedidos SET tx_id=?, qr_code=? WHERE id=?").run(cobr.txid, qr.qrcode, pedidoId);
-
-    // Iniciar polling automático (50s, 36 tentativas = 30 min)
-    iniciarPollingPedidoDash(pedidoId, cobr.txid, user, produto, variante_id);
-
+    iniciarPollingPedidoDash(pedidoId, cobr.txid, user, produto, variante_id, null);
     res.redirect(`/painel/loja/pagar/${pedidoId}`);
   } catch (e) {
-    console.error('[Dashboard Loja PIX]', e.message);
+    console.error('[Dashboard Loja]', e.message);
     res.redirect('/painel/loja?msg=pixerr');
   }
 });
@@ -538,7 +632,7 @@ router.get('/loja/status/:pedidoId', auth.requireAuth, async (req, res) => {
   res.json({ pago: false });
 });
 
-// Helper: confirmar pagamento e entregar produto no Discord
+// Helper: confirmar pagamento e entregar produto
 async function confirmarPedidoDash(pedidoId, db) {
   try {
     const { Pedidos, Usuarios } = getMainDb();
@@ -548,8 +642,10 @@ async function confirmarPedidoDash(pedidoId, db) {
     db.prepare("UPDATE pedidos SET status='pago', pago_em=strftime('%s','now') WHERE id=?").run(pedidoId);
     const u = Usuarios.get(pedido.usuario_id);
     if (u) {
-      const novoGasto = (u.total_gasto||0) + pedido.valor_total;
-      Usuarios.atualizar(pedido.usuario_id, { total_gasto: novoGasto, total_compras: (u.total_compras||0)+1 });
+      Usuarios.atualizar(pedido.usuario_id, {
+        total_gasto:   (u.total_gasto  || 0) + pedido.valor_total,
+        total_compras: (u.total_compras || 0) + 1,
+      });
       Usuarios.addPontos(pedido.usuario_id, Math.floor(pedido.valor_total));
     }
 
@@ -560,21 +656,39 @@ async function confirmarPedidoDash(pedidoId, db) {
       await processarEntrega(Pedidos.get(pedidoId), client);
     }
 
+    // Log de vendas com "Site" como vendedor
     const { logVenda } = require('../utils/canalVendas');
-    if (client) await logVenda(client, { ...Pedidos.get(pedidoId), status:'pago', metodo_pag:'pix' }, { atendente: null });
+    const pedidoAtual = Pedidos.get(pedidoId);
+    if (client && pedidoAtual) {
+      await logVenda(client, { ...pedidoAtual, status: 'pago' }, {
+        atendente:   null,
+        nomeProduto: null,
+        vendidoPorCustom: '🌐 Site (dashboard)',
+      }).catch(() => {});
+    }
   } catch (e) { console.error('[Dashboard confirmarPedido]', e.message); }
 }
 
 // Polling automático no servidor (30 min)
-function iniciarPollingPedidoDash(pedidoId, txid, user, produto, varianteId) {
+function iniciarPollingPedidoDash(pedidoId, txid, user, produto, varianteId, stripeSessionId) {
   const { db } = getMainDb();
   let tentativas = 0;
   const timer = setInterval(async () => {
     tentativas++;
     try {
-      const efi    = require('../systems/efi');
-      const status = await efi.consultarCobranca(txid);
-      if (status.pago) {
+      let pago = false;
+      if (txid) {
+        // PIX EFI
+        const efi    = require('../systems/efi');
+        const status = await efi.consultarCobranca(txid);
+        pago = status.pago;
+      } else if (stripeSessionId) {
+        // Stripe
+        const stripe = require('../systems/stripe');
+        const sess   = await stripe.consultarSessao(stripeSessionId);
+        pago = sess?.payment_status === 'paid';
+      }
+      if (pago) {
         clearInterval(timer);
         await confirmarPedidoDash(pedidoId, db);
       }
@@ -715,8 +829,71 @@ router.get('/solicitacoes', auth.middlewareAba('solicitacoes'), (req, res) => {
   res.send(layout(user, '📥 Solicitações', body, 'solicitacoes'));
 });
 
-router.post('/solicitacoes/:id/aprovar', auth.middlewareAba('solicitacoes'), (req, res) => {
-  dashDb.responderSolicitacao(req.params.id, 'aprovado', req.dashUser.username);
+router.post('/solicitacoes/:id/aprovar', auth.middlewareAba('solicitacoes'), async (req, res) => {
+  const { db, Usuarios } = getMainDb();
+  const user  = req.dashUser;
+  const sol   = dashDb.listarSolicitacoes().find(s => s.id == req.params.id);
+
+  if (sol) {
+    dashDb.responderSolicitacao(sol.id, 'aprovado', user.username);
+
+    // Entregar produto para quem solicitou
+    try {
+      // Buscar o usuário do painel que fez a solicitação
+      const solicitante = dashDb.getUsuario(sol.usuario_id);
+      if (solicitante && sol.produto_id) {
+        // Garantir usuário no banco principal
+        Usuarios.garantir(solicitante.discord_id, solicitante.username);
+
+        // Pegar variante e estoque
+        const variante = sol.variante_id
+          ? db.prepare('SELECT * FROM variantes_produto WHERE id=?').get(sol.variante_id) : null;
+        const produto  = db.prepare('SELECT * FROM produtos WHERE id=?').get(sol.produto_id);
+
+        if (produto) {
+          let conteudos = [];
+          const qtd = sol.quantidade || 1;
+
+          // Pegar itens do estoque
+          const tabEstoque = sol.variante_id ? 'estoque_variante' : 'estoque_digital';
+          const colProd    = sol.variante_id ? 'variante_id'      : 'produto_id';
+          const colId      = sol.variante_id ? sol.variante_id    : sol.produto_id;
+
+          for (let i = 0; i < qtd; i++) {
+            const item = db.prepare(`SELECT * FROM ${tabEstoque} WHERE ${colProd}=? AND usado=0 LIMIT 1`).get(colId);
+            if (item) {
+              db.prepare(`UPDATE ${tabEstoque} SET usado=1, usado_por=? WHERE id=?`).run(solicitante.discord_id, item.id);
+              conteudos.push(item.conteudo);
+            }
+          }
+
+          const conteudoFinal = conteudos.join('\n---\n');
+
+          // Salvar conteúdo no banco para mostrar no site
+          const { v4: uuidv4 } = require('uuid');
+          const pedidoId = uuidv4();
+          db.prepare("INSERT INTO pedidos (id, usuario_id, produto_id, quantidade, valor_unit, valor_total, status, metodo_pag, conteudo_entregue, pago_em) VALUES (?,?,?,?,0,0,'entregue','solicitacao',?,strftime('%s','now'))")
+            .run(pedidoId, solicitante.discord_id, sol.produto_id, qtd, conteudoFinal || '(sem estoque digital)');
+
+          // Notificar no Discord via DM
+          const clientRef = require('../utils/clientRef');
+          const client    = clientRef.getClient();
+          if (client && conteudoFinal) {
+            const member = await client.guilds.cache.first()?.members.fetch(solicitante.discord_id).catch(() => null);
+            if (member) {
+              const { EmbedBuilder } = require('discord.js');
+              await member.send({ embeds: [new EmbedBuilder()
+                .setColor(0x00ff88)
+                .setTitle('✅ Solicitação Aprovada!')
+                .setDescription(`Sua solicitação de **${qtd}x ${produto.nome}** foi aprovada.\n\n**Produto:**\`\`\`${conteudoFinal.slice(0, 1500)}\`\`\``)
+                .setTimestamp()] }).catch(() => {});
+            }
+          }
+        }
+      }
+    } catch (e) { console.error('[Solicitacao Entrega]', e.message); }
+  }
+
   res.redirect('/painel/solicitacoes?status=pendente&msg=ok');
 });
 
@@ -894,16 +1071,58 @@ router.get('/cupons', auth.middlewareAba('cupons'), (req, res) => {
   const body = `
     ${msg==='ok'?alert('success','✅ Feito!'):msg==='err'?alert('error','❌ Erro.'):''}
     ${podeEditar ? `
-    <div class="table-card" style="margin-bottom:24px">
-      <div class="table-head"><span class="table-title">➕ Novo Cupom</span></div>
-      <div style="padding:20px">
-        <form method="POST" action="/painel/cupons/criar" class="form-grid">
-          <div class="form-group"><label>Código</label><input class="form-control" name="codigo" placeholder="Gerado auto se vazio"></div>
-          <div class="form-group"><label>Tipo</label><select class="form-control" name="tipo"><option value="percentual">% Percentual</option><option value="fixo">R$ Fixo</option></select></div>
-          <div class="form-group"><label>Valor</label><input class="form-control" type="number" step="0.01" name="valor" required></div>
-          <div class="form-group"><label>Usos Máx.</label><input class="form-control" type="number" name="usos" value="100"></div>
-          <div class="form-group"><label>Validade (dias)</label><input class="form-control" type="number" name="validade" value="30"></div>
-          <div class="form-group" style="align-self:flex-end"><button class="btn btn-primary" style="width:100%" type="submit">Criar</button></div>
+    <div style="margin-bottom:24px">
+      <button onclick="document.getElementById('modal-cupom').style.display='flex'" class="btn btn-primary">➕ Novo Cupom</button>
+    </div>
+    <!-- Modal criar cupom -->
+    <div id="modal-cupom" style="display:none;position:fixed;inset:0;z-index:9999;background:#00000090;backdrop-filter:blur(4px);align-items:center;justify-content:center">
+      <div style="background:#0d0d20;border:1px solid #7c3aed40;border-radius:16px;padding:28px;width:min(600px,94vw);max-height:90vh;overflow-y:auto;box-shadow:0 24px 60px #00000080">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
+          <div style="font-size:17px;font-weight:800;color:#fff">🎟️ Criar Cupom</div>
+          <button onclick="document.getElementById('modal-cupom').style.display='none'" style="background:none;border:none;color:#7070a0;font-size:22px;cursor:pointer">✕</button>
+        </div>
+        <form method="POST" action="/painel/cupons/criar">
+          <div class="form-grid">
+            <div class="form-group"><label>Código</label><input class="form-control" name="codigo" placeholder="Gerado automaticamente se vazio"></div>
+            <div class="form-group"><label>Tipo</label><select class="form-control" name="tipo"><option value="percentual">% Percentual</option><option value="fixo">R$ Fixo</option></select></div>
+            <div class="form-group"><label>Valor</label><input class="form-control" type="number" step="0.01" name="valor" required placeholder="Ex: 10"></div>
+            <div class="form-group"><label>Usos Máximos</label><input class="form-control" type="number" name="usos" value="100" min="1"></div>
+          </div>
+          <div class="form-group"><label>Validade</label>
+            <div style="display:flex;gap:8px">
+              <input class="form-control" type="number" name="validade_valor" value="30" min="1" style="width:100px">
+              <select class="form-control" name="validade_unidade" style="flex:1">
+                <option value="dias">Dias</option>
+                <option value="horas">Horas</option>
+                <option value="minutos">Minutos</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-group"><label>Lojas (IDs de painéis, separados por vírgula — vazio = todas)</label><input class="form-control" name="lojas" placeholder="Ex: abc123,def456"></div>
+          <div class="form-group">
+            <label>Restringir a um cargo?</label>
+            <div style="display:flex;gap:10px;align-items:center;margin-top:6px">
+              <label style="display:flex;align-items:center;gap:6px;text-transform:none;font-size:13px;cursor:pointer"><input type="checkbox" id="chk-cargo" onchange="document.getElementById('grp-cargo').style.display=this.checked?'block':'none'"> Sim, restringir a cargo</label>
+            </div>
+          </div>
+          <div class="form-group" id="grp-cargo" style="display:none">
+            <label>ID do Cargo Discord</label>
+            <input class="form-control" name="cargo_id" placeholder="Ex: 1522459532469469225">
+          </div>
+          <div class="form-group">
+            <label>Restringir a uma pessoa específica?</label>
+            <div style="display:flex;gap:10px;align-items:center;margin-top:6px">
+              <label style="display:flex;align-items:center;gap:6px;text-transform:none;font-size:13px;cursor:pointer"><input type="checkbox" id="chk-pessoa" onchange="document.getElementById('grp-pessoa').style.display=this.checked?'block':'none'"> Sim, restringir a uma pessoa</label>
+            </div>
+          </div>
+          <div class="form-group" id="grp-pessoa" style="display:none">
+            <label>ID Discord da Pessoa</label>
+            <input class="form-control" name="usuario_id_restrito" placeholder="ID do Discord da pessoa">
+          </div>
+          <div style="display:flex;gap:10px;margin-top:8px">
+            <button class="btn btn-primary" style="flex:1" type="submit">✅ Criar Cupom</button>
+            <button type="button" onclick="document.getElementById('modal-cupom').style.display='none'" class="btn btn-ghost">Cancelar</button>
+          </div>
         </form>
       </div>
     </div>` : ''}
@@ -934,9 +1153,37 @@ router.get('/cupons', auth.middlewareAba('cupons'), (req, res) => {
 
 router.post('/cupons/criar', auth.middlewareAba('cupons'), express.urlencoded({extended:false}), (req,res)=>{
   try{
-    const {criarCupom,gerarCodigoCupom}=require('../systems/cupons');
-    const{codigo,tipo,valor,usos,validade}=req.body;
-    criarCupom({codigo:codigo||gerarCodigoCupom(),tipo:tipo||'percentual',valor:parseFloat(valor),usosMax:parseInt(usos)||100,validadeDias:parseInt(validade)||30,criadoPor:req.dashUser.username});
+    const { criarCupom, gerarCodigoCupom } = require('../systems/cupons');
+    const { codigo, tipo, valor, usos, validade_valor, validade_unidade, lojas, cargo_id, usuario_id_restrito } = req.body;
+
+    // Calcular validade em dias
+    const vVal  = parseInt(validade_valor) || 30;
+    const vUnit = validade_unidade || 'dias';
+    const validadeDias = vUnit === 'horas' ? vVal / 24 : vUnit === 'minutos' ? vVal / 1440 : vVal;
+
+    // lojas_validas: array de IDs de painéis
+    const lojasArr = lojas ? lojas.split(',').map(s=>s.trim()).filter(Boolean) : [];
+
+    criarCupom({
+      codigo:       codigo || gerarCodigoCupom(),
+      tipo:         tipo   || 'percentual',
+      valor:        parseFloat(valor),
+      usosMax:      parseInt(usos) || 100,
+      validadeDias: validadeDias,
+      cargoId:      cargo_id?.trim()            || null,
+      criadoPor:    req.dashUser.username,
+    });
+
+    // Salvar campos extras (lojas_validas, usuario_id_restrito) se precisar
+    if (lojasArr.length || usuario_id_restrito?.trim()) {
+      const { db } = getMainDb();
+      const c = db.prepare('SELECT id FROM cupons WHERE codigo=?').get((codigo || '').toUpperCase());
+      if (c) {
+        if (lojasArr.length) db.prepare('UPDATE cupons SET lojas_validas=? WHERE id=?').run(JSON.stringify(lojasArr), c.id);
+        if (usuario_id_restrito?.trim()) db.prepare('UPDATE cupons SET usuario_id_restrito=? WHERE id=?').run(usuario_id_restrito.trim(), c.id).catch?.(()=>{});
+      }
+    }
+
     res.redirect('/painel/cupons?msg=ok');
   }catch(e){console.error(e.message);res.redirect('/painel/cupons?msg=err');}
 });
@@ -1146,14 +1393,16 @@ router.get('/perfil', auth.requireAuth, (req, res) => {
           <tr><th>Produto</th><th>Valor</th><th>Data</th><th>Status</th><th></th></tr>
           ${pedidos.length ? pedidos.map(p => `<tr>
             <td style="display:flex;align-items:center;gap:10px">
-              ${p.produto_img ? `<img src="${p.produto_img}" style="width:36px;height:36px;border-radius:6px;object-fit:cover">` : '<div style="width:36px;height:36px;border-radius:6px;background:var(--card2);display:flex;align-items:center;justify-content:center">📦</div>'}
+              ${p.produto_img ? `<img src="${p.produto_img.includes('cdn.discordapp.com/attachments')?'https://images.weserv.nl/?url='+encodeURIComponent(p.produto_img)+'&w=72':p.produto_img}" style="width:36px;height:36px;border-radius:6px;object-fit:cover" onerror="this.style.display='none'">` : '<div style="width:36px;height:36px;border-radius:6px;background:var(--card2);display:flex;align-items:center;justify-content:center">📦</div>'}
               <span>${p.produto_nome || '—'}</span>
             </td>
-            <td style="color:#86efac;font-weight:700">${fmtMoeda(p.valor_total)}</td>
+            <td style="color:#00ff88;font-weight:700">${fmtMoeda(p.valor_total)}</td>
             <td>${fmtDate(p.criado_em)}</td>
             <td>${badge(p.status)}</td>
-            <td><a href="/painel/loja" class="btn btn-sm btn-ghost">Ver loja →</a></td>
-          </tr>`).join('') : '<tr><td colspan="5" style="text-align:center;color:#7878a0;padding:24px">Nenhuma compra ainda</td></tr>'}
+            <td>${p.conteudo_entregue
+              ? `<button onclick="mostrarConteudo(this.dataset.c,this.dataset.n)" data-c="${p.conteudo_entregue.replace(/"/g,'&quot;').replace(/\n/g,'&#10;')}" data-n="${(p.produto_nome||'Produto').replace(/"/g,'&quot;')}" class="btn btn-sm btn-success">📋 Ver Produto</button>`
+              : '<span style="color:#7070a0;font-size:12px">—</span>'}</td>
+          </tr>`).join('') : '<tr><td colspan="5" style="text-align:center;color:#7070a0;padding:24px">Nenhuma compra ainda</td></tr>'}
         </table>
       </div>
 
@@ -1177,7 +1426,46 @@ router.get('/perfil', auth.requireAuth, (req, res) => {
           </form>
         </div>
       </div>
-    </div>`;
+    </div>
+
+    <!-- Modal de conteúdo do produto -->
+    <div id="modal-conteudo" style="display:none;position:fixed;inset:0;z-index:9999;background:#00000090;backdrop-filter:blur(4px);display:none;align-items:center;justify-content:center">
+      <div style="background:#0d0d20;border:1px solid #7c3aed40;border-radius:16px;padding:28px;width:min(560px,94vw);max-height:85vh;overflow-y:auto;box-shadow:0 24px 60px #00000080">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+          <div style="font-size:16px;font-weight:800;color:#fff" id="modal-titulo">📦 Produto</div>
+          <button onclick="fecharModal()" style="background:none;border:none;color:#7070a0;font-size:22px;cursor:pointer;line-height:1">✕</button>
+        </div>
+        <div style="background:#07071a;border:1px solid #00ff8830;border-radius:10px;padding:14px;margin-bottom:14px">
+          <pre id="modal-conteudo-texto" style="font-size:13px;color:#e8e8ff;white-space:pre-wrap;word-break:break-all;margin:0"></pre>
+        </div>
+        <div style="display:flex;gap:8px">
+          <button onclick="copiarModal()" class="btn btn-success" style="flex:1">📋 Copiar</button>
+          <button onclick="fecharModal()" class="btn btn-ghost">Fechar</button>
+        </div>
+        <div id="modal-copy-ok" style="display:none;text-align:center;color:#00ff88;margin-top:8px;font-size:13px">✅ Copiado!</div>
+      </div>
+    </div>
+    <script>
+    function mostrarConteudo(conteudo, nome) {
+      document.getElementById('modal-titulo').textContent = '📦 ' + nome;
+      document.getElementById('modal-conteudo-texto').textContent = conteudo;
+      const m = document.getElementById('modal-conteudo');
+      m.style.display = 'flex';
+    }
+    function fecharModal() {
+      document.getElementById('modal-conteudo').style.display = 'none';
+    }
+    function copiarModal() {
+      const txt = document.getElementById('modal-conteudo-texto').textContent;
+      navigator.clipboard.writeText(txt).then(() => {
+        document.getElementById('modal-copy-ok').style.display = 'block';
+        setTimeout(() => document.getElementById('modal-copy-ok').style.display = 'none', 2000);
+      });
+    }
+    document.getElementById('modal-conteudo').addEventListener('click', function(e) {
+      if (e.target === this) fecharModal();
+    });
+    </script>`;
 
   res.send(layout(user, '👤 Meu Perfil', body, 'perfil'));
 });
