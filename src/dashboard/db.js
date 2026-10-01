@@ -67,6 +67,11 @@ function initDashDB() {
     }
   }
 
+  // Garantir que config_mr está habilitado para sub_dono e dono (mesmo em bancos existentes)
+  for (const cargo of ['sub_dono', 'dono']) {
+    db.prepare('INSERT OR REPLACE INTO dash_permissoes_cargo (cargo, aba, permitido) VALUES (?,?,1)').run(cargo, 'config_mr');
+  }
+
   // Criar conta dono padrão se não existir
   const OWNER = process.env.DASHBOARD_OWNER_USER || 'admin';
   const PASS  = process.env.DASHBOARD_PASSWORD    || 'mrstore2024';
