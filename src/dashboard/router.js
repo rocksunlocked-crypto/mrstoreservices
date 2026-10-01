@@ -738,13 +738,20 @@ async function confirmarPedidoDash(pedidoId, dbIn) {
           await discordUser.send({ embeds: [embed] }).catch(e => console.warn('[DashDM] DMs fechadas:', e.message));
         }
       } catch (e) { console.error('[DashDM]', e.message); }
+    }
 
-      // Log de vendas no canal
+    // Log de vendas — chamado sempre, independente do discord_id
+    const clientRefLog = require('../utils/clientRef');
+    const clientLog    = clientRefLog.getClient();
+    if (clientLog) {
       try {
         const { logVenda } = require('../utils/canalVendas');
-        const pedidoFinal = db.prepare('SELECT * FROM pedidos WHERE id=?').get(pedidoId);
-        await logVenda(client, pedidoFinal, { vendidoPorCustom: '🌐 Site (dashboard)' });
+        const pedidoFinal  = db.prepare('SELECT * FROM pedidos WHERE id=?').get(pedidoId);
+        await logVenda(clientLog, pedidoFinal, { vendidoPorCustom: '🌐 Site (dashboard)' });
+        console.log('[Dashboard] Log de venda enviado para canal', pedidoFinal?.id?.slice(0,8));
       } catch (e) { console.error('[DashLogVenda]', e.message); }
+    } else {
+      console.warn('[Dashboard] client null — log de venda não enviado');
     }
 
   } catch (e) { console.error('[Dashboard confirmarPedido]', e.message); }
