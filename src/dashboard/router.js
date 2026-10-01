@@ -1575,4 +1575,7 @@ router.post('/perfil/senha', auth.requireAuth, express.urlencoded({extended:fals
   res.redirect('/painel/perfil?msg=ok');
 });
 
+// ─── CONFIG MR ───────────────────────────────────────────────
+router.use('/config-mr', require('./configMr'));
+
 module.exports = router;
