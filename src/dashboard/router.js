@@ -389,7 +389,7 @@ router.post('/loja/finalizar', auth.middlewareAba('loja'), express.urlencoded({ 
     db.prepare("UPDATE pedidos SET tx_id=?, qr_code=? WHERE id=?").run(cobr.txid, qr.qrcode, pedidoId);
 
     // Iniciar polling automático (50s, 36 tentativas = 30 min)
-    iniciarPollingPedidoDash(pedidoId, cobr.txid, user, produto, varianteId=variante_id);
+    iniciarPollingPedidoDash(pedidoId, cobr.txid, user, produto, variante_id);
 
     res.redirect(`/painel/loja/pagar/${pedidoId}`);
   } catch (e) {
@@ -451,6 +451,13 @@ router.get('/loja/pagar/:pedidoId', auth.middlewareAba('loja'), (req, res) => {
           <div style="margin-top:14px;font-size:12px;color:#7878a0">O produto será entregue automaticamente após a confirmação do PIX.</div>
         </div>
         <button onclick="verificarManual()" class="btn btn-ghost" style="width:100%;margin-top:12px">🔍 Verificar pagamento manualmente</button>
+        <div id="conteudo-entregue" style="display:none;margin-top:16px">
+          <div style="background:#00ff8808;border:1px solid #00ff8830;border-radius:10px;padding:16px">
+            <div style="font-size:12px;color:#00ff88;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">📦 Produto Entregue</div>
+            <pre id="conteudo-texto" style="background:#0a0a1e;border:1px solid #00ff8820;border-radius:8px;padding:12px;font-size:13px;color:#e8e8ff;white-space:pre-wrap;word-break:break-all;max-height:200px;overflow-y:auto"></pre>
+            <button onclick="copiarConteudo()" class="btn btn-success" style="width:100%;margin-top:10px">📋 Copiar Produto</button>
+          </div>
+        </div>
       </div>
     </div>
     <style>
@@ -468,6 +475,11 @@ router.get('/loja/pagar/:pedidoId', auth.middlewareAba('loja'), (req, res) => {
       });
     }
 
+    function copiarConteudo() {
+      const txt = document.getElementById('conteudo-texto')?.textContent || '';
+      navigator.clipboard.writeText(txt).then(() => alert('✅ Produto copiado!'));
+    }
+
     async function verificarStatus() {
       if (pago) return;
       try {
@@ -476,10 +488,15 @@ router.get('/loja/pagar/:pedidoId', auth.middlewareAba('loja'), (req, res) => {
         if (d.pago) {
           pago = true;
           document.getElementById('status-box').innerHTML = '<div style="width:12px;height:12px;border-radius:50%;background:#00ff88"></div><span style="color:#00ff88;font-weight:600">✅ Pagamento confirmado!</span>';
-          document.getElementById('qr-status').innerHTML = '<div style="display:inline-flex;align-items:center;gap:8px;background:#00ff8810;border:1px solid #00ff8830;color:#00ff88;padding:10px 18px;border-radius:8px;font-size:13px;font-weight:600">✅ Pago! Produto entregue no Discord</div>';
+          document.getElementById('qr-status').innerHTML = '<div style="display:inline-flex;align-items:center;gap:8px;background:#00ff8810;border:1px solid #00ff8830;color:#00ff88;padding:10px 18px;border-radius:8px;font-size:13px;font-weight:600">✅ Pagamento confirmado!</div>';
+          // Mostrar conteúdo entregue no site
+          if (d.conteudo) {
+            document.getElementById('conteudo-entregue').style.display = 'block';
+            document.getElementById('conteudo-texto').textContent = d.conteudo;
+          }
           // Mostrar botão de ticket
           document.getElementById('ticket-btn').style.display = 'flex';
-          setTimeout(() => window.location.href = '/painel/perfil', 5000);
+          setTimeout(() => window.location.href = '/painel/perfil', 8000);
         }
       } catch {}
     }
@@ -497,23 +514,28 @@ router.get('/loja/pagar/:pedidoId', auth.middlewareAba('loja'), (req, res) => {
 // Endpoint de status do pedido (polling do front)
 router.get('/loja/status/:pedidoId', auth.requireAuth, async (req, res) => {
   const { db } = getMainDb();
-  const pedido = db.prepare('SELECT status FROM pedidos WHERE id=?').get(req.params.pedidoId);
-  if (!pedido) return res.json({ pago: false });
-  const pago = ['pago','entregue'].includes(pedido.status);
+  const row = db.prepare('SELECT status, tx_id, conteudo_entregue FROM pedidos WHERE id=?').get(req.params.pedidoId);
+  if (!row) return res.json({ pago: false });
+  const pago = ['pago','entregue'].includes(row.status);
+
+  if (pago) {
+    // Retornar conteúdo entregue para exibir no site
+    return res.json({ pago: true, conteudo: row.conteudo_entregue || null });
+  }
 
   // Se não pago, consultar EFI
-  if (!pago && pedido.tx_id) {
+  if (row.tx_id) {
     try {
       const efi    = require('../systems/efi');
-      const status = await efi.consultarCobranca(db.prepare('SELECT tx_id FROM pedidos WHERE id=?').get(req.params.pedidoId)?.tx_id);
+      const status = await efi.consultarCobranca(row.tx_id);
       if (status.pago) {
-        // Confirmar e entregar
         await confirmarPedidoDash(req.params.pedidoId, db);
-        return res.json({ pago: true });
+        const atualizado = db.prepare('SELECT conteudo_entregue FROM pedidos WHERE id=?').get(req.params.pedidoId);
+        return res.json({ pago: true, conteudo: atualizado?.conteudo_entregue || null });
       }
     } catch {}
   }
-  res.json({ pago });
+  res.json({ pago: false });
 });
 
 // Helper: confirmar pagamento e entregar produto no Discord
