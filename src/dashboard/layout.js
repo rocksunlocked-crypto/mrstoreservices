@@ -211,7 +211,7 @@ ${CSS}
 </head>
 <body>
 <button class="hamburger" onclick="toggleMenu()" id="ham-btn">☰</button>
-<div id="sidebar-overlay" style="display:none;position:fixed;inset:0;background:#00000070;z-index:199" onclick="toggleMenu()"></div>
+<div id="sidebar-overlay" style="display:none;position:fixed;inset:0;background:#00000070;z-index:199" onclick="fecharMenu()"></div>
 <div class="layout">
   <aside class="sidebar" id="sidebar">
     <div class="sidebar-logo">
@@ -237,25 +237,21 @@ ${CSS}
 </div>
 <script>
 function toggleMenu(){
-  const s=document.getElementById('sidebar');
-  const o=document.getElementById('sidebar-overlay');
-  const h=document.getElementById('ham-btn');
-  const open=s.classList.toggle('open');
-  o.style.display=open?'block':'none';
-  h.textContent=open?'✕':'☰';
+  const aberto = document.getElementById('sidebar').classList.contains('open');
+  if(aberto) fecharMenu(); else abrirMenu();
 }
-// Fechar menu ao clicar num link — com delay para a navegação acontecer primeiro
-document.querySelectorAll('.nav-item').forEach(a=>{
-  a.addEventListener('click',()=>{
-    if(window.innerWidth<=900){
-      setTimeout(()=>{
-        document.getElementById('sidebar').classList.remove('open');
-        document.getElementById('sidebar-overlay').style.display='none';
-        document.getElementById('ham-btn').textContent='☰';
-      }, 150);
-    }
-  });
-});
+function abrirMenu(){
+  document.getElementById('sidebar').classList.add('open');
+  document.getElementById('sidebar-overlay').style.display='block';
+  document.getElementById('ham-btn').textContent='✕';
+}
+function fecharMenu(){
+  document.getElementById('sidebar').classList.remove('open');
+  document.getElementById('sidebar-overlay').style.display='none';
+  document.getElementById('ham-btn').textContent='☰';
+}
+// Links da sidebar: navegar normalmente sem fechar o menu (o browser navega e recarrega a página)
+// Não precisa de listener — a navegação já fecha o menu pois a página recarrega
 </script>
 </body>
 </html>`;
