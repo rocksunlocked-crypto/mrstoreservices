@@ -770,6 +770,8 @@ async function marcarPagoPainel(canal, txid, ticketId, client) {
       .setTimestamp()
       .setFooter({ text: 'MrStore • Pagamento PIX' })],
   }).catch(() => {});
+}
+
 function iniciarPollingAdminPix(txid, ticketId, interaction, produto, valor, pedidoId, atendente) {
   let tentativas = 0;
   const timer = setInterval(async () => {
