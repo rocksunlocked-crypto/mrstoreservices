@@ -400,8 +400,17 @@ client.on('interactionCreate', async (interaction) => {
     if (interaction.isButton()) {
       const id = interaction.customId;
 
-      // Sistema de tickets avançado
-      if (id.startsWith('ticket_') || id.startsWith('autoclose_') || id.startsWith('rating_')) {
+      // Sistema de tickets avançado — todos os prefixos
+      if (
+        id.startsWith('ticket_')     ||
+        id.startsWith('autoclose_')  ||
+        id.startsWith('rating_')     ||
+        id.startsWith('tmenu_')      ||
+        id.startsWith('tchamar_')    ||
+        id.startsWith('tver_')       ||
+        id.startsWith('tgerar_')     ||
+        id.startsWith('tverificar_')
+      ) {
         return handleTicketInteraction(interaction);
       }
 

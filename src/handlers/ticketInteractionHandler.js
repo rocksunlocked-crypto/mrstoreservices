@@ -92,7 +92,7 @@ async function handleSelectMenu(interaction) {
     if (open.length >= config.tickets.maxTicketsPerUser) {
       return interaction.reply({
         embeds: [new EmbedBuilder().setColor(config.colors.warning)
-          .setDescription(`⚠️ Você já tem **${open.length}** ticket(s) aberto(s). Feche um antes de abrir outro.`)],
+          .setDescription(`⚠️ Você já tem um ticket aberto. Feche-o antes de abrir outro.`)],
         ephemeral: true,
       });
     }

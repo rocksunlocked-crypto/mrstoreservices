@@ -78,7 +78,7 @@ module.exports = {
       denuncia: process.env.TICKET_CATEGORY_DENUNCIA || process.env.CATEGORY_TICKETS || '1522657546345779360',
       parceria: process.env.TICKET_CATEGORY_PARCERIA || process.env.CATEGORY_TICKETS || '1522657546345779360',
     },
-    maxTicketsPerUser: 3,
+    maxTicketsPerUser: 1,
     autoCloseHours:    48,
     timeoutMinutos:    30,
     maxAbertos:        5,

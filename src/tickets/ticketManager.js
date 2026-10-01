@@ -43,7 +43,7 @@ async function openTicket(interaction, category, subject, extraFields = []) {
   if (abertos >= config.tickets.maxTicketsPerUser) {
     return interaction.reply({
       embeds: [new EmbedBuilder().setColor(config.colors.warning)
-        .setDescription(`⚠️ Você já tem **${abertos}** ticket(s) aberto(s).\nFeche um antes de abrir outro.`)],
+        .setDescription(`⚠️ Você já tem um ticket aberto. Feche-o antes de abrir outro.`)],
       ephemeral: true,
     });
   }
