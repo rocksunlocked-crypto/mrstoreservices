@@ -1,17 +1,44 @@
+/**
+ * ticketInteractionHandler.js — Roteador de interações do sistema de tickets avançado
+ *
+ * Botões do painel fixado:
+ *   tmenu_usuario_   → abre submenu ephemeral para o usuário
+ *   tmenu_admin_     → abre submenu ephemeral para staff
+ *   ticket_close_    → fecha o ticket (qualquer um: dono ou staff)
+ *
+ * Submenu Usuário:
+ *   tchamar_staff_   → gera PIX R$1; ao pagar notifica todos os staffs no privado
+ *   tver_ticket_     → mostra info do ticket para o usuário
+ *   ticket_transcript_ → gera transcript (só staff; usuário vê mensagem explicando)
+ *
+ * Submenu Admin:
+ *   ticket_claim_    → assumir
+ *   ticket_priority_ → prioridade
+ *   ticket_tags_     → tags
+ *   ticket_addnote_  → nota interna
+ *   ticket_transfer_ → transferir
+ *   ticket_rename_   → renomear
+ *   tgerar_pix_      → gera QR PIX ephemeral false no canal (preenche produto/valor/qtd via modal)
+ */
+
 const {
-  ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder,
-  EmbedBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle,
+  ModalBuilder, TextInputBuilder, TextInputStyle,
+  ActionRowBuilder, EmbedBuilder, StringSelectMenuBuilder,
+  ButtonBuilder, ButtonStyle, AttachmentBuilder,
 } = require('discord.js');
-const db = require('../database/ticketsDb');
+const db     = require('../database/ticketsDb');
 const config = require('../config');
 const { openTicket, closeTicket, reopenTicket, deleteTicketChannel } = require('../tickets/ticketManager');
-const { getModalForCategory, extractModalData } = require('../tickets/categoryForms');
+const { getModalForCategory, extractModalData, buildMenuUsuario, buildMenuAdmin } = require('../tickets/categoryForms');
 const { sendTranscript } = require('../utils/ticketTranscript');
-const { isStaff, isAdmin, errorEmbed, successEmbed } = require('../utils/ticketHelpers');
+const { isStaff, isAdmin, errorEmbed, successEmbed, getCategoryName, getDuration, formatDate } = require('../utils/ticketHelpers');
 const { handleKeepOpen } = require('../systems/ticket_autoClose');
 const { isOnCooldown, getCooldownRemaining } = require('../systems/ticket_cooldown');
 
-// ── Roteador principal ───────────────────────────────────────
+// ────────────────────────────────────────────────────────────────────────────
+// ROTEADOR PRINCIPAL
+// ────────────────────────────────────────────────────────────────────────────
+
 async function handleInteraction(interaction) {
   try {
     if (interaction.isChatInputCommand()) return handleCommand(interaction);
@@ -20,69 +47,59 @@ async function handleInteraction(interaction) {
     if (interaction.isButton())           return handleButton(interaction);
     if (interaction.isModalSubmit())      return handleModal(interaction);
   } catch (err) {
-    console.error('[INTERACTION] Erro:', err);
+    console.error('[TICKET INTERACTION]', err);
     const msg = { embeds: [errorEmbed('Ocorreu um erro inesperado.')], ephemeral: true };
     if (interaction.replied || interaction.deferred) interaction.followUp(msg).catch(() => {});
     else interaction.reply(msg).catch(() => {});
   }
 }
 
-// ── Slash Commands ───────────────────────────────────────────
+// ────────────────────────────────────────────────────────────────────────────
+// SLASH COMMANDS
+// ────────────────────────────────────────────────────────────────────────────
+
 async function handleCommand(interaction) {
   const command = interaction.client.commands.get(interaction.commandName);
   if (command) await command.execute(interaction);
 }
 
-// ── Autocomplete ─────────────────────────────────────────────
 async function handleAutocomplete(interaction) {
   const command = interaction.client.commands.get(interaction.commandName);
   if (command?.autocomplete) await command.autocomplete(interaction);
 }
 
-// ── Select Menus ─────────────────────────────────────────────
+// ────────────────────────────────────────────────────────────────────────────
+// SELECT MENUS
+// ────────────────────────────────────────────────────────────────────────────
+
 async function handleSelectMenu(interaction) {
   const { customId, values } = interaction;
 
-  // ── Abertura de ticket (painel) ──────────────────────────
+  // Abertura de ticket via painel
   if (customId === 'ticket_open_menu') {
     const category = values[0];
-
-    // Verifica cooldown
     if (isOnCooldown(interaction.user.id)) {
-      const remaining = getCooldownRemaining(interaction.user.id);
       return interaction.reply({
-        embeds: [new EmbedBuilder()
-          .setColor(config.colors.warning)
-          .setDescription(`⏱️ Aguarde **${remaining}s** antes de abrir outro ticket.`)],
+        embeds: [new EmbedBuilder().setColor(config.colors.warning)
+          .setDescription(`⏱️ Aguarde **${getCooldownRemaining(interaction.user.id)}s** antes de abrir outro ticket.`)],
         ephemeral: true,
       });
     }
-
-    // Verifica bloqueio
     if (db.isBlocked(interaction.user.id, interaction.guild.id)) {
-      return interaction.reply({
-        embeds: [errorEmbed('🔐 Você está bloqueado de abrir tickets.')],
-        ephemeral: true,
-      });
+      return interaction.reply({ embeds: [errorEmbed('🔐 Você está bloqueado de abrir tickets.')], ephemeral: true });
     }
-
-    // Verifica limite
     const open = db.getOpenTicketsByUser(interaction.user.id, interaction.guild.id);
-    if (open.length >= config.maxTicketsPerUser) {
+    if (open.length >= config.tickets.maxTicketsPerUser) {
       return interaction.reply({
-        embeds: [new EmbedBuilder()
-          .setColor(config.colors.warning)
-          .setDescription(`⚠️ Você já tem **${open.length}** ticket(s) aberto(s).\nFeche um antes de abrir outro.`)],
+        embeds: [new EmbedBuilder().setColor(config.colors.warning)
+          .setDescription(`⚠️ Você já tem **${open.length}** ticket(s) aberto(s). Feche um antes de abrir outro.`)],
         ephemeral: true,
       });
     }
-
-    // Mostra modal personalizado por categoria
-    await interaction.showModal(getModalForCategory(category));
-    return;
+    return interaction.showModal(getModalForCategory(category));
   }
 
-  // ── Prioridade ──────────────────────────────────────────
+  // Prioridade
   if (customId.startsWith('select_priority_')) {
     const ticketId = customId.replace('select_priority_', '');
     const nivel = values[0];
@@ -95,179 +112,220 @@ async function handleSelectMenu(interaction) {
     });
   }
 
-  // ── Tags ────────────────────────────────────────────────
+  // Tags
   if (customId.startsWith('select_tags_')) {
     const ticketId = customId.replace('select_tags_', '');
     const added = [];
-    for (const tag of values) {
-      const r = db.addTag(ticketId, tag);
-      if (r) added.push(tag);
-    }
-    if (added.length > 0) db.addLog(ticketId, 'TAGS ADICIONADAS', interaction.user.id, interaction.user.tag, added.join(', '));
+    for (const tag of values) { if (db.addTag(ticketId, tag)) added.push(tag); }
+    if (added.length) db.addLog(ticketId, 'TAGS ADICIONADAS', interaction.user.id, interaction.user.tag, added.join(', '));
     return interaction.update({
       embeds: [successEmbed(`Tags adicionadas: ${(added.length ? added : values).map(t => `\`${t}\``).join(', ')}`)],
       components: [],
     });
   }
 
-  // ── Transferência ────────────────────────────────────────
+  // Transferência
   if (customId.startsWith('select_transfer_')) {
     const ticketId = customId.replace('select_transfer_', '');
     const ticket = db.getTicket(ticketId);
     if (!ticket) return interaction.update({ embeds: [errorEmbed('Ticket não encontrado.')], components: [] });
-
-    const targetId = values[0];
-    const targetMember = await interaction.guild.members.fetch(targetId).catch(() => null);
+    const targetMember = await interaction.guild.members.fetch(values[0]).catch(() => null);
     if (!targetMember) return interaction.update({ embeds: [errorEmbed('Membro não encontrado.')], components: [] });
-
     const anterior = ticket.claimed_by || 'Nenhum';
     db.updateTicket(ticketId, { claimed_by: targetMember.user.tag });
     db.addLog(ticketId, 'TRANSFERIDO', interaction.user.id, interaction.user.tag, `${anterior} → ${targetMember.user.tag}`);
-    db.upsertStaffStat(targetId, targetMember.user.tag, 'tickets_claimed');
-
+    db.upsertStaffStat(values[0], targetMember.user.tag, 'tickets_claimed');
     return interaction.update({
-      embeds: [new EmbedBuilder()
-        .setColor(config.colors.info)
-        .setDescription(`↔️ Ticket transferido para ${targetMember}!`)
-        .setTimestamp()],
+      embeds: [new EmbedBuilder().setColor(config.colors.info).setDescription(`↔️ Ticket transferido para ${targetMember}!`).setTimestamp()],
       components: [],
     });
   }
 }
 
-// ── Botões ────────────────────────────────────────────────────
+// ────────────────────────────────────────────────────────────────────────────
+// BOTÕES
+// ────────────────────────────────────────────────────────────────────────────
+
 async function handleButton(interaction) {
   const { customId } = interaction;
 
-  // ── Manter aberto (auto-close) ──────────────────────────
-  if (customId.startsWith('autoclose_keep_')) {
-    const ticketId = customId.replace('autoclose_keep_', '');
-    return handleKeepOpen(interaction, ticketId);
-  }
+  // ── Auto-close keep open ─────────────────────────────────
+  if (customId.startsWith('autoclose_keep_'))
+    return handleKeepOpen(interaction, customId.replace('autoclose_keep_', ''));
 
-  // ── Painel admin refresh ────────────────────────────────
-  if (customId === 'admin_refresh_panel' || customId === 'admin_sla_report') {
-    const cmd = interaction.client.commands.get('admin');
-    if (cmd) {
-      // Simula subcomando
-      const fakeSub = customId === 'admin_sla_report' ? 'sla' : 'painel';
-      return interaction.reply({ content: `Use \`/admin ${fakeSub}\` para atualizar.`, ephemeral: true });
-    }
-    return;
-  }
-
-  // ── Hint de abrir ticket ─────────────────────────────────
-  if (customId === 'goto_panel_hint') {
-    return interaction.reply({ content: '🎫 Vá até o canal de tickets e use o menu para abrir um novo ticket!', ephemeral: true });
-  }
-
-  // ── Avaliação (via DM ou canal) ──────────────────────────
+  // ── Avaliação via DM ─────────────────────────────────────
   if (customId.startsWith('rating_')) {
-    const parts = customId.split('_');
-    const rating = parseInt(parts[parts.length - 1]);
+    const parts    = customId.split('_');
+    const rating   = parseInt(parts[parts.length - 1]);
     const ticketId = parts.slice(1, -1).join('_');
-    const ticket = db.getTicket(ticketId);
+    const ticket   = db.getTicket(ticketId);
     if (!ticket) return interaction.reply({ embeds: [errorEmbed('Ticket não encontrado.')], ephemeral: true });
     if (ticket.rating) return interaction.reply({ embeds: [errorEmbed('Você já avaliou este ticket.')], ephemeral: true });
-    if (ticket.user_id !== interaction.user.id) return interaction.reply({ embeds: [errorEmbed('Apenas o dono do ticket pode avaliar.')], ephemeral: true });
-
+    if (ticket.user_id !== interaction.user.id) return interaction.reply({ embeds: [errorEmbed('Apenas o dono pode avaliar.')], ephemeral: true });
     db.updateTicket(ticketId, { rating });
     if (ticket.claimed_by) db.updateStaffRating(ticket.claimed_by, ticket.claimed_by, rating);
-
     const labels = { 1: 'Péssimo 😞', 2: 'Ruim 😕', 3: 'Regular 😐', 4: 'Bom 😊', 5: 'Excelente 🤩' };
     return interaction.update({
       embeds: [new EmbedBuilder()
         .setColor(rating >= 4 ? config.colors.success : rating === 3 ? config.colors.warning : config.colors.danger)
         .setTitle('⭐ Avaliação Registrada!')
-        .setDescription(`Você avaliou o ticket **${ticketId}** com **${'⭐'.repeat(rating)}** — ${labels[rating]}\n\nObrigado pelo seu feedback!`)
+        .setDescription(`Você avaliou com **${'⭐'.repeat(rating)}** — ${labels[rating]}\nObrigado pelo seu feedback!`)
         .setTimestamp()],
       components: [],
     });
   }
 
-  // Para todos os outros botões, precisa do ticket pelo canal
-  const buttonTicketId = customId.match(/^ticket_(?:close|reopen|delete|claim|priority|tags|addnote|transfer|transcript|rename)_(.+)$/)?.[1];
-  const ticket = db.getTicketByChannel(interaction.channel.id) || (buttonTicketId ? db.getTicket(buttonTicketId) : null);
-
-  // ── Fechar ───────────────────────────────────────────────
-  if (customId.startsWith('ticket_close_')) {
-    if (!ticket) {
-      return interaction.reply({ embeds: [errorEmbed('Ticket não encontrado.')], ephemeral: true });
-    }
-    const isOwner = ticket?.user_id === interaction.user.id;
-    if (!isStaff(interaction.member) && !isOwner) {
-      return interaction.reply({ embeds: [errorEmbed('Sem permissão.')], ephemeral: true });
-    }
-    if (ticket.status === 'closed') {
-      return interaction.reply({ embeds: [errorEmbed('Ticket não encontrado ou já fechado.')], ephemeral: true });
-    }
-
-    const modal = new ModalBuilder()
-      .setCustomId(`modal_close_ticket_${ticket.ticket_id}`)
-      .setTitle('🔒 Fechar Ticket');
-
-    modal.addComponents(
-      new ActionRowBuilder().addComponents(
-        new TextInputBuilder()
-          .setCustomId('close_reason')
-          .setLabel('Motivo do fechamento (opcional)')
-          .setStyle(TextInputStyle.Paragraph)
-          .setPlaceholder('Ex: Problema resolvido, usuário satisfeito...')
-          .setRequired(false)
-          .setMaxLength(500)
-      )
-    );
-    return interaction.showModal(modal);
-  }
-
   // ── Reabrir ──────────────────────────────────────────────
   if (customId.startsWith('ticket_reopen_')) {
-    if (!isStaff(interaction.member) && ticket?.user_id !== interaction.user.id) {
-      return interaction.reply({ embeds: [errorEmbed('Sem permissão.')], ephemeral: true });
-    }
+    const ticket = db.getTicket(customId.replace('ticket_reopen_', ''));
     if (!ticket) return interaction.reply({ embeds: [errorEmbed('Ticket não encontrado.')], ephemeral: true });
+    if (!isStaff(interaction.member) && ticket.user_id !== interaction.user.id)
+      return interaction.reply({ embeds: [errorEmbed('Sem permissão.')], ephemeral: true });
     return reopenTicket(interaction, ticket);
   }
 
   // ── Deletar canal ────────────────────────────────────────
   if (customId.startsWith('ticket_delete_')) {
     if (!isStaff(interaction.member)) return interaction.reply({ embeds: [errorEmbed('Sem permissão.')], ephemeral: true });
+    const ticket = db.getTicket(customId.replace('ticket_delete_', ''));
     if (!ticket) return interaction.reply({ embeds: [errorEmbed('Ticket não encontrado.')], ephemeral: true });
     return deleteTicketChannel(interaction, ticket);
   }
 
-  // ── Assumir ──────────────────────────────────────────────
-  if (customId.startsWith('ticket_claim_')) {
-    if (!isStaff(interaction.member)) return interaction.reply({ embeds: [errorEmbed('Sem permissão.')], ephemeral: true });
-    if (!ticket) return interaction.reply({ embeds: [errorEmbed('Ticket não encontrado.')], ephemeral: true });
-    if (ticket.status === 'closed') return interaction.reply({ embeds: [errorEmbed('Ticket fechado.')], ephemeral: true });
+  // ── Verificar PIX "Chamar Staff" ─────────────────────────
+  if (customId.startsWith('tverificar_pix_chamada_')) {
+    const [txid, ticketId] = customId.replace('tverificar_pix_chamada_', '').split('__');
+    return verificarPixChamada(interaction, txid, ticketId);
+  }
 
-    if (ticket.claimed_by) {
-      return interaction.reply({ embeds: [errorEmbed(`Já assumido por **${ticket.claimed_by}**. Use \`/transferir\`.`)], ephemeral: true });
-    }
+  // ── Verificar PIX "Admin QR" ─────────────────────────────
+  if (customId.startsWith('tverificar_pix_admin_')) {
+    const [txid, ticketId] = customId.replace('tverificar_pix_admin_', '').split('__');
+    return verificarPagamentoAdminPix(interaction, txid, ticketId);
+  }
 
-    db.updateTicket(ticket.ticket_id, { claimed_by: interaction.user.tag });
-    db.addLog(ticket.ticket_id, 'ASSUMIDO', interaction.user.id, interaction.user.tag);
-    db.upsertStaffStat(interaction.user.id, interaction.user.tag, 'tickets_claimed');
+  // Resolver ticket do canal para os próximos botões
+  const ticket = db.getTicketByChannel(interaction.channel.id)
+    || db.getTicket(customId.split('_').pop());
 
+  // ── MENU USUÁRIO ─────────────────────────────────────────
+  if (customId.startsWith('tmenu_usuario_')) {
     return interaction.reply({
-      embeds: [new EmbedBuilder()
-        .setColor(config.colors.success)
-        .setDescription(`✋ **${interaction.user}** assumiu este ticket e irá te atender!`)
-        .setTimestamp()],
+      embeds: [new EmbedBuilder().setColor(config.colors.primary)
+        .setTitle('👤 Menu do Usuário')
+        .setDescription('Escolha uma opção abaixo:')],
+      components: [buildMenuUsuario(customId.replace('tmenu_usuario_', ''))],
+      ephemeral: true,
     });
   }
 
-  // ── Prioridade ───────────────────────────────────────────
+  // ── MENU ADMIN ───────────────────────────────────────────
+  if (customId.startsWith('tmenu_admin_')) {
+    if (!isStaff(interaction.member))
+      return interaction.reply({ embeds: [errorEmbed('Apenas staff pode usar o Menu Admin.')], ephemeral: true });
+    return interaction.reply({
+      embeds: [new EmbedBuilder().setColor(config.colors.warning)
+        .setTitle('⚙️ Menu Admin')
+        .setDescription('Escolha uma ação de gerenciamento:')],
+      components: buildMenuAdmin(customId.replace('tmenu_admin_', '')),
+      ephemeral: true,
+    });
+  }
+
+  // ── FECHAR ───────────────────────────────────────────────
+  if (customId.startsWith('ticket_close_')) {
+    if (!ticket) return interaction.reply({ embeds: [errorEmbed('Ticket não encontrado.')], ephemeral: true });
+    if (!isStaff(interaction.member) && ticket.user_id !== interaction.user.id)
+      return interaction.reply({ embeds: [errorEmbed('Sem permissão.')], ephemeral: true });
+    if (ticket.status === 'closed')
+      return interaction.reply({ embeds: [errorEmbed('Este ticket já está fechado.')], ephemeral: true });
+    const modal = new ModalBuilder().setCustomId(`modal_close_ticket_${ticket.ticket_id}`).setTitle('❌ Fechar Ticket');
+    modal.addComponents(new ActionRowBuilder().addComponents(
+      new TextInputBuilder().setCustomId('close_reason').setLabel('Motivo (opcional)')
+        .setStyle(TextInputStyle.Paragraph).setRequired(false).setMaxLength(500)
+        .setPlaceholder('Ex: Problema resolvido, dúvida esclarecida...'),
+    ));
+    return interaction.showModal(modal);
+  }
+
+  // ── CHAMAR STAFF (PIX R$1) ───────────────────────────────
+  if (customId.startsWith('tchamar_staff_')) {
+    const ticketId = customId.replace('tchamar_staff_', '');
+    if (!ticket) return interaction.reply({ embeds: [errorEmbed('Ticket não encontrado.')], ephemeral: true });
+    if (ticket.user_id !== interaction.user.id)
+      return interaction.reply({ embeds: [errorEmbed('Apenas o dono do ticket pode chamar o staff.')], ephemeral: true });
+    return chamarStaffViaPix(interaction, ticket, ticketId);
+  }
+
+  // ── VER MEU TICKET ───────────────────────────────────────
+  if (customId.startsWith('tver_ticket_')) {
+    if (!ticket) return interaction.reply({ embeds: [errorEmbed('Ticket não encontrado.')], ephemeral: true });
+    const pInfo    = config.priorities[ticket.priority] || config.priorities.media;
+    const embed    = new EmbedBuilder()
+      .setColor(pInfo.color)
+      .setTitle(`🎫 ${ticket.ticket_id}`)
+      .addFields(
+        { name: '📂 Categoria',  value: getCategoryName(ticket.category || ticket.tipo), inline: true },
+        { name: '📌 Status',     value: ticket.status === 'open' || ticket.status === 'aberto' ? '🟢 Aberto' : '🔴 Fechado', inline: true },
+        { name: '🎯 Prioridade', value: pInfo.label, inline: true },
+        { name: '✋ Atendente',  value: ticket.claimed_by || ticket.atendente || 'Aguardando...', inline: true },
+        { name: '📅 Aberto em',  value: formatDate(ticket.created_at || ticket.criado_em), inline: true },
+        { name: '⏱️ Duração',    value: getDuration(ticket.created_at || ticket.criado_em), inline: true },
+      )
+      .setTimestamp();
+    return interaction.reply({ embeds: [embed], ephemeral: true });
+  }
+
+  // ── TRANSCRIPT (submenu usuário) ─────────────────────────
+  if (customId.startsWith('ticket_transcript_')) {
+    // Usuário comum: orienta; staff: gera
+    if (!isStaff(interaction.member)) {
+      return interaction.reply({
+        embeds: [new EmbedBuilder().setColor(config.colors.info)
+          .setDescription('📄 O transcript é gerado automaticamente ao fechar o ticket e enviado para o canal de logs.')],
+        ephemeral: true,
+      });
+    }
+    if (!ticket) return interaction.reply({ embeds: [errorEmbed('Ticket não encontrado.')], ephemeral: true });
+    await interaction.deferReply({ ephemeral: true });
+    const logCh = interaction.guild.channels.cache.get(config.channels.ticketTranscript)
+      || await interaction.guild.client.channels.fetch(config.channels.ticketTranscript).catch(() => null);
+    await sendTranscript(interaction.channel, ticket, logCh, interaction.user.tag);
+    db.addLog(ticket.ticket_id, 'TRANSCRIPT MANUAL', interaction.user.id, interaction.user.tag);
+    return interaction.editReply({ embeds: [successEmbed('Transcript gerado e enviado!')] });
+  }
+
+  // ── ASSUMIR ──────────────────────────────────────────────
+  if (customId.startsWith('ticket_claim_')) {
+    if (!isStaff(interaction.member)) return interaction.reply({ embeds: [errorEmbed('Sem permissão.')], ephemeral: true });
+    if (!ticket || ticket.status === 'closed') return interaction.reply({ embeds: [errorEmbed('Ticket fechado ou não encontrado.')], ephemeral: true });
+    if (ticket.claimed_by) return interaction.reply({ embeds: [errorEmbed(`Já assumido por **${ticket.claimed_by}**.`)], ephemeral: true });
+    db.updateTicket(ticket.ticket_id, { claimed_by: interaction.user.tag });
+    db.addLog(ticket.ticket_id, 'ASSUMIDO', interaction.user.id, interaction.user.tag);
+    db.upsertStaffStat(interaction.user.id, interaction.user.tag, 'tickets_claimed');
+    // Notificar usuário no privado
+    const usuarioId = ticket.user_id || ticket.usuario_id;
+    const member    = await interaction.guild.members.fetch(usuarioId).catch(() => null);
+    if (member) {
+      member.send({ embeds: [new EmbedBuilder().setColor(config.colors.success)
+        .setTitle('✋ Seu ticket foi assumido!')
+        .setDescription(`**${interaction.user.tag}** assumiu seu ticket **${ticket.ticket_id}** e irá te atender em breve.`)
+        .setTimestamp()] }).catch(() => {});
+    }
+    return interaction.reply({
+      embeds: [new EmbedBuilder().setColor(config.colors.success)
+        .setDescription(`✋ **${interaction.user}** assumiu este ticket!`).setTimestamp()],
+    });
+  }
+
+  // ── PRIORIDADE ───────────────────────────────────────────
   if (customId.startsWith('ticket_priority_')) {
     if (!isStaff(interaction.member)) return interaction.reply({ embeds: [errorEmbed('Sem permissão.')], ephemeral: true });
-    if (!ticket) return;
-
+    if (!ticket) return interaction.reply({ embeds: [errorEmbed('Ticket não encontrado.')], ephemeral: true });
     const menu = new StringSelectMenuBuilder()
       .setCustomId(`select_priority_${ticket.ticket_id}`)
       .setPlaceholder('Selecione a prioridade...')
       .addOptions(Object.entries(config.priorities).map(([k, v]) => ({ label: v.label, value: k })));
-
     return interaction.reply({
       embeds: [new EmbedBuilder().setColor(config.colors.primary).setDescription('🎯 Selecione a prioridade:')],
       components: [new ActionRowBuilder().addComponents(menu)],
@@ -275,18 +333,16 @@ async function handleButton(interaction) {
     });
   }
 
-  // ── Tags ─────────────────────────────────────────────────
+  // ── TAGS ─────────────────────────────────────────────────
   if (customId.startsWith('ticket_tags_')) {
     if (!isStaff(interaction.member)) return interaction.reply({ embeds: [errorEmbed('Sem permissão.')], ephemeral: true });
-    if (!ticket) return;
-
+    if (!ticket) return interaction.reply({ embeds: [errorEmbed('Ticket não encontrado.')], ephemeral: true });
     const TAGS = ['bug','urgente','aguardando-usuario','aguardando-staff','em-andamento','resolvido','duplicado','invalido','vip','reincidente','verificado'];
     const menu = new StringSelectMenuBuilder()
       .setCustomId(`select_tags_${ticket.ticket_id}`)
       .setPlaceholder('Selecione as tags...')
       .setMinValues(1).setMaxValues(5)
       .addOptions(TAGS.map(t => ({ label: t, value: t })));
-
     return interaction.reply({
       embeds: [new EmbedBuilder().setColor(config.colors.primary).setDescription('🏷️ Selecione as tags:')],
       components: [new ActionRowBuilder().addComponents(menu)],
@@ -294,50 +350,29 @@ async function handleButton(interaction) {
     });
   }
 
-  // ── Nota interna ─────────────────────────────────────────
+  // ── NOTA INTERNA ─────────────────────────────────────────
   if (customId.startsWith('ticket_addnote_')) {
     if (!isStaff(interaction.member)) return interaction.reply({ embeds: [errorEmbed('Sem permissão.')], ephemeral: true });
-    if (!ticket) return;
-
-    const modal = new ModalBuilder()
-      .setCustomId(`modal_note_${ticket.ticket_id}`)
-      .setTitle('📝 Nota Interna');
-    modal.addComponents(
-      new ActionRowBuilder().addComponents(
-        new TextInputBuilder()
-          .setCustomId('note_text')
-          .setLabel('Nota (apenas a staff pode ver)')
-          .setStyle(TextInputStyle.Paragraph)
-          .setRequired(true).setMaxLength(1000)
-      )
-    );
+    if (!ticket) return interaction.reply({ embeds: [errorEmbed('Ticket não encontrado.')], ephemeral: true });
+    const modal = new ModalBuilder().setCustomId(`modal_note_${ticket.ticket_id}`).setTitle('📝 Nota Interna');
+    modal.addComponents(new ActionRowBuilder().addComponents(
+      new TextInputBuilder().setCustomId('note_text').setLabel('Nota (só a staff vê)')
+        .setStyle(TextInputStyle.Paragraph).setRequired(true).setMaxLength(1000),
+    ));
     return interaction.showModal(modal);
   }
 
-  // ── Transferir ───────────────────────────────────────────
+  // ── TRANSFERIR ───────────────────────────────────────────
   if (customId.startsWith('ticket_transfer_')) {
     if (!isStaff(interaction.member)) return interaction.reply({ embeds: [errorEmbed('Sem permissão.')], ephemeral: true });
-    if (!ticket) return;
-
-    const staffMembers = [];
-    for (const roleId of [config.roles.admin, config.roles.moderador, config.roles.suporte]) {
-      const role = interaction.guild.roles.cache.get(roleId);
-      if (role) {
-        role.members.forEach(m => {
-          if (!m.user.bot && !staffMembers.find(s => s.value === m.id)) {
-            staffMembers.push({ label: m.user.tag.slice(0, 100), value: m.id });
-          }
-        });
-      }
+    if (!ticket) return interaction.reply({ embeds: [errorEmbed('Ticket não encontrado.')], ephemeral: true });
+    const staffList = [];
+    for (const roleId of [config.roles.admin, config.roles.mod, config.roles.suporte, config.tickets.roles.admin, config.tickets.roles.moderador, config.tickets.roles.suporte]) {
+      const role = roleId && interaction.guild.roles.cache.get(roleId);
+      if (role) role.members.forEach(m => { if (!m.user.bot && !staffList.find(s => s.value === m.id)) staffList.push({ label: m.user.tag.slice(0, 100), value: m.id }); });
     }
-
-    if (staffMembers.length === 0) return interaction.reply({ embeds: [errorEmbed('Nenhum staff encontrado.')], ephemeral: true });
-
-    const menu = new StringSelectMenuBuilder()
-      .setCustomId(`select_transfer_${ticket.ticket_id}`)
-      .setPlaceholder('Selecione um membro...')
-      .addOptions(staffMembers.slice(0, 25));
-
+    if (!staffList.length) return interaction.reply({ embeds: [errorEmbed('Nenhum staff encontrado.')], ephemeral: true });
+    const menu = new StringSelectMenuBuilder().setCustomId(`select_transfer_${ticket.ticket_id}`).setPlaceholder('Selecione...').addOptions(staffList.slice(0, 25));
     return interaction.reply({
       embeds: [new EmbedBuilder().setColor(config.colors.info).setDescription('↔️ Para quem transferir?')],
       components: [new ActionRowBuilder().addComponents(menu)],
@@ -345,94 +380,362 @@ async function handleButton(interaction) {
     });
   }
 
-  // ── Renomear ─────────────────────────────────────────────
+  // ── RENOMEAR ─────────────────────────────────────────────
   if (customId.startsWith('ticket_rename_')) {
     if (!isStaff(interaction.member)) return interaction.reply({ embeds: [errorEmbed('Sem permissão.')], ephemeral: true });
-    if (!ticket) return;
-
-    const modal = new ModalBuilder()
-      .setCustomId(`modal_rename_${ticket.ticket_id}`)
-      .setTitle('✏️ Renomear Ticket');
-    modal.addComponents(
-      new ActionRowBuilder().addComponents(
-        new TextInputBuilder()
-          .setCustomId('rename_text')
-          .setLabel('Novo assunto')
-          .setStyle(TextInputStyle.Short)
-          .setRequired(true).setMaxLength(80)
-      )
-    );
+    if (!ticket) return interaction.reply({ embeds: [errorEmbed('Ticket não encontrado.')], ephemeral: true });
+    const modal = new ModalBuilder().setCustomId(`modal_rename_${ticket.ticket_id}`).setTitle('✏️ Renomear Ticket');
+    modal.addComponents(new ActionRowBuilder().addComponents(
+      new TextInputBuilder().setCustomId('rename_text').setLabel('Novo assunto').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(80),
+    ));
     return interaction.showModal(modal);
   }
 
-  // ── Transcript manual ────────────────────────────────────
-  if (customId.startsWith('ticket_transcript_')) {
-    if (!isStaff(interaction.member)) return interaction.reply({ embeds: [errorEmbed('Sem permissão.')], ephemeral: true });
-    if (!ticket) return;
-
-    await interaction.deferReply({ ephemeral: true });
-    const transcriptCh = interaction.guild.channels.cache.get(config.channels.transcript);
-    if (!transcriptCh) return interaction.editReply({ embeds: [errorEmbed('Canal de transcript não encontrado.')] });
-
-    await sendTranscript(interaction.channel, ticket, transcriptCh, interaction.user.tag);
-    db.addLog(ticket.ticket_id, 'TRANSCRIPT GERADO', interaction.user.id, interaction.user.tag);
-    return interaction.editReply({ embeds: [successEmbed(`Transcript gerado e enviado para ${transcriptCh}!`)] });
+  // ── GERAR PIX / QR (Admin) ───────────────────────────────
+  if (customId.startsWith('tgerar_pix_')) {
+    if (!isStaff(interaction.member)) return interaction.reply({ embeds: [errorEmbed('Apenas staff pode gerar PIX.')], ephemeral: true });
+    if (!ticket) return interaction.reply({ embeds: [errorEmbed('Ticket não encontrado.')], ephemeral: true });
+    const modal = new ModalBuilder().setCustomId(`modal_pix_admin_${ticket.ticket_id}`).setTitle('💸 Gerar QR Code PIX');
+    modal.addComponents(
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder().setCustomId('pix_produto').setLabel('Nome do produto / serviço').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(100),
+      ),
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder().setCustomId('pix_valor').setLabel('Valor (R$)').setStyle(TextInputStyle.Short).setRequired(true).setPlaceholder('Ex: 29.90'),
+      ),
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder().setCustomId('pix_quantidade').setLabel('Quantidade').setStyle(TextInputStyle.Short).setRequired(false).setPlaceholder('Padrão: 1'),
+      ),
+    );
+    return interaction.showModal(modal);
   }
 }
 
-// ── Modais ────────────────────────────────────────────────────
+// ────────────────────────────────────────────────────────────────────────────
+// MODAIS
+// ────────────────────────────────────────────────────────────────────────────
+
 async function handleModal(interaction) {
   const { customId } = interaction;
 
-  // ── Abrir ticket com dados do formulário por categoria ───
+  // Abrir ticket
   if (customId.startsWith('modal_open_ticket_')) {
     const category = customId.replace('modal_open_ticket_', '');
     const { subject, extraFields } = extractModalData(interaction, category);
     return openTicket(interaction, category, subject, extraFields);
   }
 
-  // ── Fechar ticket ────────────────────────────────────────
+  // Fechar ticket
   if (customId.startsWith('modal_close_ticket_')) {
     const ticketId = customId.replace('modal_close_ticket_', '');
-    const ticket = db.getTicket(ticketId);
+    const ticket   = db.getTicket(ticketId);
     if (!ticket) return interaction.reply({ embeds: [errorEmbed('Ticket não encontrado.')], ephemeral: true });
-    if (ticket.status === 'closed') return interaction.reply({ embeds: [errorEmbed('Este ticket já está fechado.')], ephemeral: true });
-    if (!isStaff(interaction.member) && ticket.user_id !== interaction.user.id) {
-      return interaction.reply({ embeds: [errorEmbed('Sem permissão para fechar este ticket.')], ephemeral: true });
-    }
+    if (ticket.status === 'closed') return interaction.reply({ embeds: [errorEmbed('Já fechado.')], ephemeral: true });
+    if (!isStaff(interaction.member) && ticket.user_id !== interaction.user.id)
+      return interaction.reply({ embeds: [errorEmbed('Sem permissão.')], ephemeral: true });
     const reason = interaction.fields.getTextInputValue('close_reason') || 'Sem motivo informado';
     return closeTicket(interaction, ticket, reason);
   }
 
-  // ── Nota interna ─────────────────────────────────────────
+  // Nota interna
   if (customId.startsWith('modal_note_')) {
     const ticketId = customId.replace('modal_note_', '');
-    const note = interaction.fields.getTextInputValue('note_text');
+    const note     = interaction.fields.getTextInputValue('note_text');
     db.addNote(ticketId, interaction.user.id, interaction.user.tag, note);
     db.addLog(ticketId, 'NOTA ADICIONADA', interaction.user.id, interaction.user.tag);
     return interaction.reply({
-      embeds: [new EmbedBuilder()
-        .setColor(config.colors.warning)
-        .setTitle('📝 Nota Interna')
-        .setDescription(note)
-        .setFooter({ text: `Por ${interaction.user.tag}` })
-        .setTimestamp()],
+      embeds: [new EmbedBuilder().setColor(config.colors.warning).setTitle('📝 Nota Interna').setDescription(note)
+        .setFooter({ text: `Por ${interaction.user.tag}` }).setTimestamp()],
       ephemeral: true,
     });
   }
 
-  // ── Renomear ─────────────────────────────────────────────
+  // Renomear
   if (customId.startsWith('modal_rename_')) {
-    const ticketId = customId.replace('modal_rename_', '');
-    const ticket = db.getTicket(ticketId);
+    const ticketId   = customId.replace('modal_rename_', '');
+    const ticket     = db.getTicket(ticketId);
     if (!ticket) return;
     const novoAssunto = interaction.fields.getTextInputValue('rename_text');
-    const novoNome = `🎫│${ticketId.toLowerCase()}-${novoAssunto.toLowerCase().replace(/\s+/g, '-').slice(0, 50)}`;
+    const novoNome    = `🎫│${ticketId.toLowerCase()}-${novoAssunto.toLowerCase().replace(/\s+/g, '-').slice(0, 50)}`;
     await interaction.channel.setName(novoNome).catch(() => {});
     db.updateTicket(ticketId, { subject: novoAssunto });
     db.addLog(ticketId, 'RENOMEADO', interaction.user.id, interaction.user.tag, novoNome);
     return interaction.reply({ embeds: [successEmbed(`Canal renomeado para **${novoNome}**!`)], ephemeral: true });
   }
+
+  // PIX Admin — gerar QR no canal
+  if (customId.startsWith('modal_pix_admin_')) {
+    const ticketId   = customId.replace('modal_pix_admin_', '');
+    const produto    = interaction.fields.getTextInputValue('pix_produto');
+    const valorStr   = interaction.fields.getTextInputValue('pix_valor').replace(',', '.');
+    const qtdStr     = interaction.fields.getTextInputValue('pix_quantidade') || '1';
+    const qtd        = Math.max(1, parseInt(qtdStr) || 1);
+    const valorUnit  = parseFloat(valorStr);
+    if (isNaN(valorUnit) || valorUnit <= 0)
+      return interaction.reply({ embeds: [errorEmbed('Valor inválido. Use ex: 29.90')], ephemeral: true });
+    const valorTotal = valorUnit * qtd;
+    return gerarPixAdmin(interaction, ticketId, produto, valorUnit, qtd, valorTotal);
+  }
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// HELPER — CHAMAR STAFF VIA PIX R$1
+// ────────────────────────────────────────────────────────────────────────────
+
+async function chamarStaffViaPix(interaction, ticket, ticketId) {
+  await interaction.deferReply({ ephemeral: true });
+
+  try {
+    const efi    = require('../systems/efi');
+    const { v4: uuidv4 } = require('uuid');
+    const pedidoId = uuidv4();
+
+    const cobr = await efi.criarCobrancaPix({
+      valor:       1.00,
+      descricao:   `Chamar Staff — Ticket ${ticketId}`,
+      pedidoId,
+      nomeCliente: interaction.user.username,
+    });
+
+    const qr = await efi.gerarQRCode(cobr.locId);
+
+    const embed = new EmbedBuilder()
+      .setColor(config.colors.pix)
+      .setTitle('📞 Chamar Staff — PIX R$ 1,00')
+      .setDescription([
+        `Para chamar o staff com prioridade, pague **R$ 1,00** via PIX.`,
+        `Assim que o pagamento for confirmado, **todos os membros da staff serão notificados no privado** para atender seu ticket.`,
+        ``,
+        `⏱️ QR Code válido por **30 minutos**.`,
+        `📋 Pix Copia e Cola abaixo:`,
+      ].join('\n'))
+      .addFields({ name: '📋 Pix Copia e Cola', value: `\`\`\`${qr.qrcode}\`\`\`` })
+      .setImage(qr.imagemQrcode || qr.linkVisualizacao || null)
+      .setFooter({ text: `Ticket ${ticketId} • Gerado em ${new Date().toLocaleTimeString('pt-BR')}` })
+      .setTimestamp();
+
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`tverificar_pix_chamada_${cobr.txid}__${ticketId}`)
+        .setLabel('✅ Já paguei — Verificar')
+        .setStyle(ButtonStyle.Success),
+    );
+
+    // Salvar txid para polling no index
+    if (!global._pixChamadas) global._pixChamadas = new Map();
+    global._pixChamadas.set(cobr.txid, {
+      ticketId,
+      usuarioId: interaction.user.id,
+      guild:     interaction.guild,
+      canal:     interaction.channel,
+      criado_em: Date.now(),
+    });
+
+    // Iniciar polling automático
+    iniciarPollingChamada(cobr.txid, ticketId, interaction);
+
+    return interaction.editReply({ embeds: [embed], components: [row] });
+  } catch (err) {
+    console.error('[Chamar Staff PIX]', err.message);
+    return interaction.editReply({ embeds: [errorEmbed(`Erro ao gerar PIX: ${err.message}`)] });
+  }
+}
+
+async function verificarPixChamada(interaction, txid, ticketId) {
+  await interaction.deferReply({ ephemeral: true });
+  try {
+    const efi    = require('../systems/efi');
+    const status = await efi.consultarCobranca(txid);
+    if (!status.pago) {
+      return interaction.editReply({ embeds: [new EmbedBuilder().setColor(config.colors.warning)
+        .setDescription('⏳ Pagamento ainda não identificado. Aguarde alguns segundos e tente novamente.')] });
+    }
+    await notificarStaffChamada(interaction.client, ticketId, interaction.guild, interaction.channel, interaction.user.id);
+    return interaction.editReply({ embeds: [successEmbed('✅ Pagamento confirmado! Staff notificado no privado.')] });
+  } catch (err) {
+    return interaction.editReply({ embeds: [errorEmbed(`Erro ao verificar: ${err.message}`)] });
+  }
+}
+
+async function notificarStaffChamada(client, ticketId, guild, canal, usuarioId) {
+  const { db: dbMain } = require('../database/database');
+  const embed = new EmbedBuilder()
+    .setColor(config.colors.danger)
+    .setTitle('🚨 Chamada de Staff Confirmada!')
+    .setDescription([
+      `O usuário <@${usuarioId}> pagou **R$ 1,00** para solicitar atendimento urgente.`,
+      ``,
+      `📍 Ticket: <#${canal.id}>`,
+      `🎫 ID: \`${ticketId}\``,
+    ].join('\n'))
+    .setTimestamp();
+
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setLabel('🎫 Ir para o Ticket').setStyle(ButtonStyle.Link).setURL(`https://discord.com/channels/${guild.id}/${canal.id}`),
+  );
+
+  // Notificar todos os staffs no privado
+  const staffRoles = [config.roles.owner, config.roles.admin, config.roles.mod, config.roles.suporte, config.tickets.roles.admin, config.tickets.roles.moderador, config.tickets.roles.suporte].filter(Boolean);
+  const notificados = new Set();
+
+  for (const roleId of staffRoles) {
+    const role = guild.roles.cache.get(roleId);
+    if (!role) continue;
+    for (const [, member] of role.members) {
+      if (member.user.bot || notificados.has(member.id)) continue;
+      notificados.add(member.id);
+      member.send({ embeds: [embed], components: [row] }).catch(() => {});
+    }
+  }
+
+  // Avisar no canal do ticket
+  await canal.send({
+    content: `<@${usuarioId}>`,
+    embeds: [new EmbedBuilder().setColor(config.colors.success)
+      .setDescription('✅ **Pagamento confirmado!** A staff foi notificada no privado e irá atender em breve.')
+      .setTimestamp()],
+  }).catch(() => {});
+}
+
+function iniciarPollingChamada(txid, ticketId, interaction) {
+  let tentativas = 0;
+  const maxTentativas = 36;
+  const timer = setInterval(async () => {
+    tentativas++;
+    try {
+      const efi    = require('../systems/efi');
+      const status = await efi.consultarCobranca(txid);
+      if (status.pago) {
+        clearInterval(timer);
+        global._pixChamadas?.delete(txid);
+        await notificarStaffChamada(interaction.client, ticketId, interaction.guild, interaction.channel, interaction.user.id);
+      }
+    } catch {}
+    if (tentativas >= maxTentativas) {
+      clearInterval(timer);
+      global._pixChamadas?.delete(txid);
+    }
+  }, 50_000);
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// HELPER — GERAR PIX ADMIN (QR no canal, visível para todos)
+// ────────────────────────────────────────────────────────────────────────────
+
+async function gerarPixAdmin(interaction, ticketId, produto, valorUnit, qtd, valorTotal) {
+  await interaction.deferReply({ ephemeral: true });
+
+  try {
+    const efi    = require('../systems/efi');
+    const { v4: uuidv4 } = require('uuid');
+    const pedidoId = uuidv4();
+
+    const cobr = await efi.criarCobrancaPix({
+      valor:     valorTotal,
+      descricao: `${produto} (x${qtd}) — Ticket ${ticketId}`,
+      pedidoId,
+    });
+
+    const qr = await efi.gerarQRCode(cobr.locId);
+
+    const expiraPix = Math.floor(Date.now() / 1000) + 1800;
+
+    const embed = new EmbedBuilder()
+      .setColor(config.colors.pix)
+      .setTitle('💸 Cobrança PIX')
+      .setDescription('Realize o pagamento abaixo para concluir a compra.')
+      .addFields(
+        { name: '📦 Produto',   value: produto,                              inline: true },
+        { name: '🔢 Qtd',       value: String(qtd),                          inline: true },
+        { name: '💵 Total',     value: `**R$ ${valorTotal.toFixed(2)}**`,    inline: true },
+        { name: '⏰ Expira em', value: `<t:${expiraPix}:R>`,                 inline: true },
+        { name: '🎫 Ticket',    value: `\`${ticketId}\``,                    inline: true },
+        { name: '✋ Gerado por',value: `<@${interaction.user.id}>`,          inline: true },
+        { name: '📋 Pix Copia e Cola', value: `\`\`\`${qr.qrcode}\`\`\`` },
+      )
+      .setImage(qr.imagemQrcode || qr.linkVisualizacao || null)
+      .setFooter({ text: 'MrStore • Aguardando pagamento...' })
+      .setTimestamp();
+
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`tverificar_pix_admin_${cobr.txid}__${ticketId}`)
+        .setLabel('✅ Verificar Pagamento')
+        .setStyle(ButtonStyle.Success),
+    );
+
+    // Postar no canal (ephemeral: false)
+    await interaction.channel.send({ embeds: [embed], components: [row] });
+    await interaction.editReply({ embeds: [successEmbed('✅ QR Code PIX gerado no canal!')] });
+
+    // Polling automático
+    iniciarPollingAdminPix(cobr.txid, ticketId, interaction, produto, valorTotal, pedidoId);
+  } catch (err) {
+    console.error('[PIX Admin]', err.message);
+    return interaction.editReply({ embeds: [errorEmbed(`Erro ao gerar PIX: ${err.message}`)] });
+  }
+}
+
+async function verificarPagamentoAdminPix(interaction, txid, ticketId) {
+  await interaction.deferReply({ ephemeral: true });
+  try {
+    const efi    = require('../systems/efi');
+    const status = await efi.consultarCobranca(txid);
+    if (!status.pago) {
+      return interaction.editReply({ embeds: [new EmbedBuilder().setColor(config.colors.warning)
+        .setDescription('⏳ Pagamento ainda não identificado. Tente em alguns segundos.')] });
+    }
+    // Marcar como pago no canal
+    await marcarPagoPainel(interaction.channel, txid, ticketId);
+    return interaction.editReply({ embeds: [successEmbed('✅ Pagamento confirmado!')] });
+  } catch (err) {
+    return interaction.editReply({ embeds: [errorEmbed(`Erro: ${err.message}`)] });
+  }
+}
+
+async function marcarPagoPainel(canal, txid, ticketId) {
+  // Atualiza a mensagem do QR no canal mostrando que foi pago
+  try {
+    const msgs = await canal.messages.fetch({ limit: 20 });
+    const qrMsg = msgs.find(m =>
+      m.author.bot &&
+      m.embeds.length > 0 &&
+      m.embeds[0]?.footer?.text?.includes('Aguardando pagamento') &&
+      m.components?.length > 0 &&
+      m.components[0]?.components?.[0]?.customId?.includes(txid)
+    );
+    if (qrMsg) {
+      const embedPago = EmbedBuilder.from(qrMsg.embeds[0].toJSON())
+        .setColor(config.colors.success)
+        .setFooter({ text: '✅ PAGAMENTO CONFIRMADO — MrStore' });
+      await qrMsg.edit({ embeds: [embedPago], components: [] });
+    }
+  } catch {}
+
+  await canal.send({
+    embeds: [new EmbedBuilder()
+      .setColor(config.colors.success)
+      .setTitle('✅ Pagamento Confirmado!')
+      .setDescription('O pagamento via PIX foi identificado e confirmado.\nObrigado! Aguarde a entrega do produto.')
+      .setTimestamp()
+      .setFooter({ text: 'MrStore • Pagamento PIX' })],
+  }).catch(() => {});
+}
+
+function iniciarPollingAdminPix(txid, ticketId, interaction, produto, valor, pedidoId) {
+  let tentativas = 0;
+  const timer = setInterval(async () => {
+    tentativas++;
+    try {
+      const efi    = require('../systems/efi');
+      const status = await efi.consultarCobranca(txid);
+      if (status.pago) {
+        clearInterval(timer);
+        await marcarPagoPainel(interaction.channel, txid, ticketId);
+      }
+    } catch {}
+    if (tentativas >= 36) clearInterval(timer);
+  }, 50_000);
 }
 
 module.exports = { handleInteraction };

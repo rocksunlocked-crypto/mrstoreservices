@@ -1,132 +1,159 @@
 /**
- * Sistema de Notificações e Alertas de Atividade
- * - Notifica staff quando usuário responde após inatividade
- * - DM de confirmação ao usuário quando ticket é aberto
- * - Alerta quando ticket urgente não tem atendente
- * - Ping ao staff quando usuário menciona palavras-chave críticas
+ * ticket_notifications.js
+ *
+ * Regras:
+ * 1. Ao abrir ticket → DM de confirmação para o usuário (1x)
+ * 2. Quando staff responde → DM para o usuário avisando (cooldown 5 min por ticket)
+ * 3. Palavras-chave urgentes → pinga staff no canal (1x por ticket)
+ * 4. NÃO marca staff repetidamente — só 1 menção ao abrir o ticket
  */
 
 const { EmbedBuilder } = require('discord.js');
 const config = require('../config');
-const db = require('../database/ticketsDb');
+const { getCategoryName } = require('../utils/ticketHelpers');
 
-// Palavras-chave que disparam alerta imediato
-const URGENT_KEYWORDS = [
-  'urgente', 'urgente!', 'emergência', 'emergencia', 'crítico', 'critico',
-  'imediato', 'socorro', 'ajuda urgente', 'grave', 'sério', 'serio',
-];
+// Cooldown de notificação por ticket (5 min)
+const lastNotifiedTs  = new Map(); // ticketId → timestamp
+const NOTIFY_COOLDOWN = 5 * 60;   // segundos
 
-// Rastreia quais tickets tiveram notificação de resposta enviada
-const lastNotifiedTs = new Map(); // ticketId -> timestamp da última notificação
+// Palavras-chave urgentes (alerta 1x por ticket)
+const URGENT_KEYWORDS   = ['urgente','emergência','emergencia','crítico','critico','socorro','imediato','grave'];
+const keywordAlerted    = new Set();
 
-const NOTIFICATION_COOLDOWN = 30 * 60; // 30 min entre notificações de atividade
-
-// ── Notifica staff sobre resposta do usuário ─────────────────
+// ── Notificar usuário no privado quando staff responde ────────
 async function notifyStaffActivity(message, ticket) {
   if (message.author.bot) return;
 
-  const now = Math.floor(Date.now() / 1000);
-  const lastNotif = lastNotifiedTs.get(ticket.ticket_id) || 0;
+  const isStaffMessage = isStaffMember(message.member);
+  const usuarioId = ticket.user_id || ticket.usuario_id;
 
-  if ((now - lastNotif) < NOTIFICATION_COOLDOWN) return;
+  // Só notifica o usuário quando é staff respondendo
+  if (!isStaffMessage || message.author.id === usuarioId) return;
 
-  // Só notifica se o último a falar NÃO foi o usuário (evita spam)
+  const now      = Math.floor(Date.now() / 1000);
+  const ticketId = ticket.ticket_id || ticket.id;
+  const lastNotif = lastNotifiedTs.get(ticketId) || 0;
+
+  // Cooldown — não spamma DM a cada mensagem do staff
+  if ((now - lastNotif) < NOTIFY_COOLDOWN) return;
+  lastNotifiedTs.set(ticketId, now);
+
   try {
-    const messages = await message.channel.messages.fetch({ limit: 5, before: message.id });
-    const prevMsgs = [...messages.values()];
-    const lastNonBotMsg = prevMsgs.find(m => !m.author.bot);
-
-    // Se a mensagem anterior já era do usuário, não notifica
-    if (lastNonBotMsg && lastNonBotMsg.author.id === ticket.user_id) return;
-
-    // Se não tem atendente, pinga suporte
-    if (!ticket.claimed_by) {
-      lastNotifiedTs.set(ticket.ticket_id, now);
-      return; // Quem cuida disso é o SLA
-    }
-
-    lastNotifiedTs.set(ticket.ticket_id, now);
+    const guild  = message.guild;
+    const member = await guild.members.fetch(usuarioId).catch(() => null);
+    if (!member) return;
 
     const embed = new EmbedBuilder()
-      .setColor(config.colors.info)
-      .setDescription(`💬 **${message.author.tag}** respondeu no ticket **${ticket.ticket_id}**\n${message.channel}`)
+      .setColor(config.colors.primary)
+      .setTitle('💬 Seu ticket recebeu uma resposta!')
+      .setDescription([
+        `**${message.author.tag}** respondeu no seu ticket **${ticketId}**.`,
+        ``,
+        `📍 Acesse o ticket para ver a mensagem:`,
+      ].join('\n'))
+      .addFields(
+        { name: '🎫 Ticket',    value: `\`${ticketId}\``, inline: true },
+        { name: '📂 Categoria', value: getCategoryName(ticket.category || ticket.tipo), inline: true },
+      )
+      .setFooter({ text: 'MrStore • Clique no link abaixo para acessar' })
       .setTimestamp();
 
-    // Notifica o atendente que assumiu
-    // (a notificação vai no próprio canal, para não spammar DMs)
-    await message.channel.send({ embeds: [embed] }).catch(() => {});
+    const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setLabel('🎫 Ver Ticket')
+        .setStyle(ButtonStyle.Link)
+        .setURL(`https://discord.com/channels/${guild.id}/${ticket.channel_id || ticket.canal_id}`),
+    );
 
-  } catch {}
+    await member.send({ embeds: [embed], components: [row] }).catch(() => {});
+  } catch (e) {
+    console.error('[Notifications] Erro ao notificar usuário:', e.message);
+  }
 }
 
-// ── Verifica palavras-chave críticas ─────────────────────────
+// ── Verificar palavras-chave urgentes ─────────────────────────
 async function checkUrgentKeywords(message, ticket) {
-  if (message.author.bot || message.author.id !== ticket.user_id) return;
+  if (message.author.bot) return;
+  const usuarioId = ticket.user_id || ticket.usuario_id;
+  if (message.author.id !== usuarioId) return;
 
-  const content = message.content.toLowerCase();
-  const hasUrgentKeyword = URGENT_KEYWORDS.some(kw => content.includes(kw));
+  const content   = message.content.toLowerCase();
+  const hasUrgent = URGENT_KEYWORDS.some(kw => content.includes(kw));
+  if (!hasUrgent) return;
 
-  if (!hasUrgentKeyword) return;
-  if (wasKeywordAlerted(ticket.ticket_id)) return;
-
-  markKeywordAlerted(ticket.ticket_id);
+  const ticketId = ticket.ticket_id || ticket.id;
+  if (keywordAlerted.has(ticketId)) return;
+  keywordAlerted.add(ticketId);
 
   const embed = new EmbedBuilder()
     .setColor(0xFF0000)
-    .setTitle('🚨 Palavra-chave Crítica Detectada')
+    .setTitle('🚨 Palavra-chave Urgente Detectada')
     .setDescription(
-      `O usuário <@${ticket.user_id}> usou uma palavra de urgência no ticket **${ticket.ticket_id}**.\n\n` +
-      `> Mensagem: *"${message.content.slice(0, 200)}"*`
+      `O usuário <@${usuarioId}> usou uma palavra de urgência no ticket **${ticketId}**.\n\n` +
+      `> *"${message.content.slice(0, 200)}"*`
     )
     .addFields({ name: '🔗 Canal', value: `${message.channel}`, inline: true })
     .setTimestamp();
 
   await message.channel.send({
-    content: `<@&${config.roles.admin}> <@&${config.roles.moderador}>`,
-    embeds: [embed],
+    content: `<@&${config.roles.admin}> <@&${config.roles.mod}>`,
+    embeds:  [embed],
   }).catch(() => {});
 }
 
-// ── DM de confirmação ao abrir ticket ───────────────────────
+// ── DM de confirmação ao abrir ticket ─────────────────────────
 async function sendOpenConfirmDM(member, ticket) {
-  const { getCategoryName } = require('../utils/ticketHelpers');
+  const ticketId   = ticket.ticket_id || ticket.id;
+  const categoryId = ticket.category || ticket.tipo || 'suporte';
+
+  const tempos = {
+    denuncia: '⏱️ Até 24 horas',
+    suporte:  '⏱️ Até 12 horas',
+    parceria: '⏱️ Até 48 horas',
+  };
+
   try {
+    const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
     const embed = new EmbedBuilder()
       .setTitle('🎫 Seu ticket foi aberto!')
-      .setColor(config.colors[ticket.category] || config.colors.primary)
+      .setColor(config.colors[categoryId] || config.colors.primary)
       .setDescription(
-        `Seu ticket foi criado com sucesso e nossa equipe irá te atender em breve.\n\n` +
-        `**Por favor, não abra múltiplos tickets** para o mesmo assunto.`
+        `Seu ticket foi criado com sucesso.\n\n` +
+        `Nossa equipe irá te atender em breve.\n` +
+        `**Não abra múltiplos tickets** para o mesmo assunto.`
       )
       .addFields(
-        { name: '🎫 ID', value: `\`${ticket.ticket_id}\``, inline: true },
-        { name: '📂 Categoria', value: getCategoryName(ticket.category), inline: true },
-        { name: '🏷️ Assunto', value: ticket.subject, inline: false },
-        { name: '⏰ Previsão de Resposta', value: getCategoryResponseTime(ticket.category), inline: false },
+        { name: '🎫 ID',           value: `\`${ticketId}\``,                      inline: true },
+        { name: '📂 Categoria',    value: getCategoryName(categoryId),             inline: true },
+        { name: '🏷️ Assunto',      value: ticket.subject || 'Sem assunto',         inline: false },
+        { name: '⏰ Previsão',      value: tempos[categoryId] || '⏱️ Em breve',    inline: false },
       )
-      .setFooter({ text: 'Não feche o ticket até ter seu problema resolvido!' })
+      .setFooter({ text: 'Não feche o ticket até resolver seu problema!' })
       .setTimestamp();
 
-    await member.send({ embeds: [embed] });
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setLabel('🎫 Ir para o Ticket')
+        .setStyle(ButtonStyle.Link)
+        .setURL(`https://discord.com/channels/${member.guild.id}/${ticket.channel_id || ticket.canal_id}`),
+    );
+
+    await member.send({ embeds: [embed], components: [row] });
   } catch {}
 }
 
-function getCategoryResponseTime(category) {
-  const times = {
-    denuncia: '🕐 Até 24 horas',
-    suporte:  '🕐 Até 12 horas',
-    parceria: '🕐 Até 48 horas',
-  };
-  return times[category] || '🕐 Em breve';
+// ── Helper interno ─────────────────────────────────────────────
+function isStaffMember(member) {
+  if (!member) return false;
+  if (member.permissions.has('Administrator')) return true;
+  const staffRoles = [
+    config.roles.owner, config.roles.chefe, config.roles.admin,
+    config.roles.mod, config.roles.suporte, config.roles.loja,
+    config.roles.aceitarCompra,
+    config.tickets?.roles?.admin, config.tickets?.roles?.moderador, config.tickets?.roles?.suporte,
+  ].filter(Boolean);
+  return staffRoles.some(r => member.roles.cache.has(r));
 }
 
-// Controle de alerta de keyword por ticket
-const keywordAlerted = new Set();
-function wasKeywordAlerted(ticketId) { return keywordAlerted.has(ticketId); }
-function markKeywordAlerted(ticketId) { keywordAlerted.add(ticketId); }
-
-module.exports = {
-  notifyStaffActivity,
-  checkUrgentKeywords,
-  sendOpenConfirmDM,
-};
+module.exports = { notifyStaffActivity, checkUrgentKeywords, sendOpenConfirmDM };
