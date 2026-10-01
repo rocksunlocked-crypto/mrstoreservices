@@ -74,9 +74,9 @@ module.exports = {
     },
     // Categorias (pastas do Discord) para cada tipo de ticket avançado
     categories: {
-      suporte:  process.env.TICKET_CATEGORY_SUPORTE  || process.env.CATEGORY_TICKETS || '1522657546345779360',
-      denuncia: process.env.TICKET_CATEGORY_DENUNCIA || process.env.CATEGORY_TICKETS || '1522657546345779360',
-      parceria: process.env.TICKET_CATEGORY_PARCERIA || process.env.CATEGORY_TICKETS || '1522657546345779360',
+      suporte:  process.env.TICKET_CATEGORY_SUPORTE  || '1522601202834079754',
+      denuncia: process.env.TICKET_CATEGORY_DENUNCIA || '1522595791447789700',
+      parceria: process.env.TICKET_CATEGORY_PARCERIA || '1522612246805614763',
     },
     maxTicketsPerUser: 1,
     autoCloseHours:    48,
