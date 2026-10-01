@@ -77,7 +77,9 @@ router.post('/login', express.urlencoded({ extended: false }), async (req, res) 
   dashDb.atualizarAcesso(user.id);
   const token = auth.criarSessao(user.id, ip);
   res.setHeader('Set-Cookie', `dash_sess=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${86400 * 7}`);
-  res.redirect('/painel');
+  // Clientes vão direto pra loja, outros pro overview
+  const destino = user.cargo === 'cliente' ? '/painel/loja' : '/painel';
+  res.redirect(destino);
 });
 
 // ─── CADASTRO ────────────────────────────────────────────────
@@ -110,7 +112,7 @@ router.post('/cadastro', express.urlencoded({ extended: false }), async (req, re
   if (!/^\d+$/.test(discord_id.trim()))
     return res.redirect('/painel/cadastro?err=discord');
 
-  // Verificar se está no servidor
+  // Verificar se está no servidor — obrigatório
   try {
     const clientRef = require('../utils/clientRef');
     const client    = clientRef.getClient();
@@ -125,14 +127,16 @@ router.post('/cadastro', express.urlencoded({ extended: false }), async (req, re
   if (existe) return res.redirect('/painel/cadastro?err=exists');
 
   const { db } = getMainDb();
-  db.prepare('INSERT INTO dash_usuarios (username, password, discord_id, cargo, aprovado) VALUES (?,?,?,?,0)')
+  db.prepare('INSERT INTO dash_usuarios (username, password, discord_id, cargo, aprovado) VALUES (?,?,?,?,1)')
     .run(username.trim(), auth.hashPass(password), discord_id.trim(), 'cliente');
 
-  res.send(loginLayout('Cadastro enviado', `
-    <div class="auth-title" style="color:#86efac">✅ Solicitação enviada!</div>
-    <div class="auth-sub" style="margin-bottom:24px">Aguarde a aprovação de um administrador.</div>
-    <a href="/painel/login" class="btn btn-primary" style="width:100%">Voltar ao Login</a>
-  `));
+  // Auto-login após cadastro
+  const novoUser = dashDb.getUsuarioByUsername(username.trim());
+  const ip       = dashDb.getIp(req);
+  const token    = auth.criarSessao(novoUser.id, ip);
+  res.setHeader('Set-Cookie', `dash_sess=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${86400 * 7}`);
+  // Clientes vão direto para a loja
+  res.redirect('/painel/loja');
 });
 
 // ─── IP BLOQUEADO ────────────────────────────────────────────
@@ -343,38 +347,219 @@ router.post('/loja/finalizar', auth.middlewareAba('loja'), express.urlencoded({ 
     const produto  = db.prepare('SELECT * FROM produtos WHERE id=?').get(produto_id);
     if (!produto) return res.redirect('/painel/loja');
 
-    let valor = variante?.preco || produto.preco;
+    let valor    = variante?.preco || produto.preco;
     let desconto = 0;
     let cupomUsado = null;
+    let cupomObj   = null;
 
     if (cupom?.trim()) {
       const valCupom = Cupons.validar(cupom.trim(), user.discord_id, valor);
       if (valCupom.valido) {
         desconto   = Cupons.calcDesconto(valCupom.cupom, valor);
         cupomUsado = valCupom.cupom.codigo;
+        cupomObj   = valCupom.cupom;
       }
     }
 
-    const valorFinal = Math.max(0, valor - desconto);
+    const valorFinal = Math.max(0.01, valor - desconto);
     const pedidoId   = Pedidos.criar({
       usuarioId: user.discord_id,
       produtoId: produto_id,
       quantidade: 1,
-      valorUnit: valor,
+      valorUnit:  valor,
       valorTotal: valorFinal,
       desconto,
       cupomUsado,
-      metodoPag: 'dashboard',
+      metodoPag: 'pix',
     });
 
-    if (cupomUsado) Cupons.usar(db.prepare('SELECT id FROM cupons WHERE codigo=?').get(cupomUsado)?.id, user.discord_id, pedidoId);
+    if (cupomObj) Cupons.usar(cupomObj.id, user.discord_id, pedidoId);
 
-    res.redirect('/painel/loja?msg=ok');
+    // Gerar cobrança PIX
+    const efi  = require('../systems/efi');
+    const cobr = await efi.criarCobrancaPix({
+      valor:       valorFinal,
+      descricao:   `${produto.nome} — MrStore`,
+      pedidoId,
+      nomeCliente: user.username,
+    });
+    const qr = await efi.gerarQRCode(cobr.locId);
+
+    // Salvar txid no pedido
+    db.prepare("UPDATE pedidos SET tx_id=?, qr_code=? WHERE id=?").run(cobr.txid, qr.qrcode, pedidoId);
+
+    // Iniciar polling automático (50s, 36 tentativas = 30 min)
+    iniciarPollingPedidoDash(pedidoId, cobr.txid, user, produto, varianteId=variante_id);
+
+    res.redirect(`/painel/loja/pagar/${pedidoId}`);
   } catch (e) {
-    console.error('[Dashboard Loja]', e.message);
-    res.redirect('/painel/loja?msg=err');
+    console.error('[Dashboard Loja PIX]', e.message);
+    res.redirect('/painel/loja?msg=pixerr');
   }
 });
+
+router.get('/loja/pagar/:pedidoId', auth.middlewareAba('loja'), (req, res) => {
+  const { db } = getMainDb();
+  const user   = req.dashUser;
+  const pedido = db.prepare('SELECT p.*, pr.nome as produto_nome, pr.imagem_url as produto_img FROM pedidos p LEFT JOIN produtos pr ON p.produto_id=pr.id WHERE p.id=?').get(req.params.pedidoId);
+  if (!pedido || pedido.usuario_id !== user.discord_id) return res.redirect('/painel/loja');
+
+  const expiraPix = Math.floor(Date.now() / 1000) + 1800;
+
+  const body = `
+    <a href="/painel/loja" class="btn btn-ghost btn-sm" style="margin-bottom:20px">← Voltar à Loja</a>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;max-width:900px">
+      <div class="stat-card" style="--glow-a:7c3aed;--glow-b:3b82f6;text-align:center">
+        <div style="font-size:13px;color:#7878a0;margin-bottom:16px">📱 Escaneie o QR Code ou copie o Pix</div>
+        <div id="qr-status" style="margin-bottom:16px">
+          <div style="display:inline-flex;align-items:center;gap:8px;background:#78350f;color:#fde68a;padding:8px 16px;border-radius:8px;font-size:13px;font-weight:600">
+            ⏳ Aguardando pagamento... <span id="expira-counter"></span>
+          </div>
+        </div>
+        <div style="background:#fff;border-radius:12px;padding:12px;display:inline-block;margin-bottom:16px">
+          <img id="qr-img" src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(pedido.qr_code || '')}" style="width:200px;height:200px;display:block">
+        </div>
+        <div style="background:var(--card2);border:1px solid var(--border2);border-radius:8px;padding:10px;margin-bottom:14px;font-size:11px;color:#7878a0;word-break:break-all">${pedido.qr_code || 'QR Code não disponível'}</div>
+        <button onclick="copiarPix()" class="btn btn-primary" style="width:100%">📋 Copiar Pix Copia e Cola</button>
+        <div id="copy-ok" style="display:none;color:#00ff88;font-size:12px;margin-top:8px">✅ Copiado!</div>
+        <a id="ticket-btn" href="https://discord.gg/eTDSq9Hhth" target="_blank" rel="noopener"
+           class="btn btn-ghost" style="width:100%;margin-top:10px;display:none;border-color:#7c3aed50">
+          🎫 Abrir Ticket no Discord
+        </a>
+      </div>
+      <div>
+        <div class="stat-card" style="--glow-a:22c55e;--glow-b:16a34a;margin-bottom:16px">
+          <div class="stat-label">Resumo do Pedido</div>
+          <div style="display:flex;align-items:center;gap:12px;margin-top:10px">
+            ${pedido.produto_img ? `<img src="${pedido.produto_img}" style="width:56px;height:56px;border-radius:8px;object-fit:cover">` : '<div style="width:56px;height:56px;background:var(--card2);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:24px">📦</div>'}
+            <div>
+              <div style="font-weight:700;color:#fff">${pedido.produto_nome}</div>
+              <div style="font-size:22px;font-weight:800;color:#86efac">R$ ${Number(pedido.valor_total).toFixed(2)}</div>
+            </div>
+          </div>
+          <div style="margin-top:14px;font-size:12px;color:#7878a0">
+            <div>🆔 Pedido: <code>${pedido.id.slice(0,8).toUpperCase()}</code></div>
+            <div style="margin-top:4px">⏰ Expira em: <span id="expira-txt">${new Date(expiraPix*1000).toLocaleTimeString('pt-BR')}</span></div>
+          </div>
+        </div>
+        <div class="stat-card" style="--glow-a:3b82f6;--glow-b:2563eb">
+          <div class="stat-label">Status do Pagamento</div>
+          <div id="status-box" style="margin-top:10px;display:flex;align-items:center;gap:10px">
+            <div style="width:12px;height:12px;border-radius:50%;background:#f59e0b;animation:pulse 1.5s infinite"></div>
+            <span id="status-txt" style="color:#fde68a;font-weight:600">Aguardando pagamento...</span>
+          </div>
+          <div style="margin-top:14px;font-size:12px;color:#7878a0">O produto será entregue automaticamente após a confirmação do PIX.</div>
+        </div>
+        <button onclick="verificarManual()" class="btn btn-ghost" style="width:100%;margin-top:12px">🔍 Verificar pagamento manualmente</button>
+      </div>
+    </div>
+    <style>
+    @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+    </style>
+    <script>
+    const pedidoId = '${pedido.id}';
+    const pixCode  = ${JSON.stringify(pedido.qr_code || '')};
+    let pago = false;
+
+    function copiarPix() {
+      navigator.clipboard.writeText(pixCode).then(() => {
+        document.getElementById('copy-ok').style.display = 'block';
+        setTimeout(() => document.getElementById('copy-ok').style.display = 'none', 2000);
+      });
+    }
+
+    async function verificarStatus() {
+      if (pago) return;
+      try {
+        const r = await fetch('/painel/loja/status/' + pedidoId);
+        const d = await r.json();
+        if (d.pago) {
+          pago = true;
+          document.getElementById('status-box').innerHTML = '<div style="width:12px;height:12px;border-radius:50%;background:#00ff88"></div><span style="color:#00ff88;font-weight:600">✅ Pagamento confirmado!</span>';
+          document.getElementById('qr-status').innerHTML = '<div style="display:inline-flex;align-items:center;gap:8px;background:#00ff8810;border:1px solid #00ff8830;color:#00ff88;padding:10px 18px;border-radius:8px;font-size:13px;font-weight:600">✅ Pago! Produto entregue no Discord</div>';
+          // Mostrar botão de ticket
+          document.getElementById('ticket-btn').style.display = 'flex';
+          setTimeout(() => window.location.href = '/painel/perfil', 5000);
+        }
+      } catch {}
+    }
+
+    function verificarManual() { verificarStatus(); }
+
+    // Polling a cada 5 segundos na página
+    setInterval(verificarStatus, 5000);
+    verificarStatus();
+    </script>`;
+
+  res.send(layout(user, '💳 Pagamento PIX', body, 'loja'));
+});
+
+// Endpoint de status do pedido (polling do front)
+router.get('/loja/status/:pedidoId', auth.requireAuth, async (req, res) => {
+  const { db } = getMainDb();
+  const pedido = db.prepare('SELECT status FROM pedidos WHERE id=?').get(req.params.pedidoId);
+  if (!pedido) return res.json({ pago: false });
+  const pago = ['pago','entregue'].includes(pedido.status);
+
+  // Se não pago, consultar EFI
+  if (!pago && pedido.tx_id) {
+    try {
+      const efi    = require('../systems/efi');
+      const status = await efi.consultarCobranca(db.prepare('SELECT tx_id FROM pedidos WHERE id=?').get(req.params.pedidoId)?.tx_id);
+      if (status.pago) {
+        // Confirmar e entregar
+        await confirmarPedidoDash(req.params.pedidoId, db);
+        return res.json({ pago: true });
+      }
+    } catch {}
+  }
+  res.json({ pago });
+});
+
+// Helper: confirmar pagamento e entregar produto no Discord
+async function confirmarPedidoDash(pedidoId, db) {
+  try {
+    const { Pedidos, Usuarios } = getMainDb();
+    const pedido = Pedidos.get(pedidoId);
+    if (!pedido || pedido.status !== 'pendente') return;
+
+    db.prepare("UPDATE pedidos SET status='pago', pago_em=strftime('%s','now') WHERE id=?").run(pedidoId);
+    const u = Usuarios.get(pedido.usuario_id);
+    if (u) {
+      const novoGasto = (u.total_gasto||0) + pedido.valor_total;
+      Usuarios.atualizar(pedido.usuario_id, { total_gasto: novoGasto, total_compras: (u.total_compras||0)+1 });
+      Usuarios.addPontos(pedido.usuario_id, Math.floor(pedido.valor_total));
+    }
+
+    const clientRef = require('../utils/clientRef');
+    const client    = clientRef.getClient();
+    if (client) {
+      const { processarEntrega } = require('../systems/loja');
+      await processarEntrega(Pedidos.get(pedidoId), client);
+    }
+
+    const { logVenda } = require('../utils/canalVendas');
+    if (client) await logVenda(client, { ...Pedidos.get(pedidoId), status:'pago', metodo_pag:'pix' }, { atendente: null });
+  } catch (e) { console.error('[Dashboard confirmarPedido]', e.message); }
+}
+
+// Polling automático no servidor (30 min)
+function iniciarPollingPedidoDash(pedidoId, txid, user, produto, varianteId) {
+  const { db } = getMainDb();
+  let tentativas = 0;
+  const timer = setInterval(async () => {
+    tentativas++;
+    try {
+      const efi    = require('../systems/efi');
+      const status = await efi.consultarCobranca(txid);
+      if (status.pago) {
+        clearInterval(timer);
+        await confirmarPedidoDash(pedidoId, db);
+      }
+    } catch {}
+    if (tentativas >= 36) clearInterval(timer);
+  }, 50_000);
+}
 
 // ─── SOLICITAR ITEM (staff+) ─────────────────────────────────
 router.get('/solicitar', auth.middlewareAba('solicitar'), (req, res) => {
@@ -840,6 +1025,156 @@ router.post('/gerenciar/permissoes', auth.middlewareAba('gerenciar'), express.ur
   const { cargo, aba, val } = req.body;
   if (cargo && aba) dashDb.setPermissao(cargo, aba, val === '1');
   res.redirect('/painel/gerenciar?msg=ok');
+});
+
+// ─── SENHA — redefinir por admin (só dono vê) ─────────────────
+router.get('/gerenciar/usuarios/:id/senha', auth.middlewareAba('gerenciar'), (req, res) => {
+  const user    = req.dashUser;
+  if (user.cargo !== 'dono' && user.cargo !== 'sub_dono') return res.redirect('/painel/gerenciar');
+  const alvo    = dashDb.getUsuario(req.params.id);
+  if (!alvo) return res.redirect('/painel/gerenciar');
+  const senhaHash = user.cargo === 'dono' ? alvo.password : null;
+  const body = `
+    <a href="/painel/gerenciar" class="btn btn-ghost btn-sm" style="margin-bottom:20px">← Voltar</a>
+    <div class="table-card" style="max-width:500px">
+      <div class="table-head"><span class="table-title">🔑 Redefinir Senha — ${alvo.username}</span></div>
+      <div style="padding:20px">
+        ${senhaHash ? `<div class="form-group"><label>Hash atual (somente dono)</label><code style="font-size:11px;word-break:break-all;color:#a855f7">${senhaHash}</code></div>` : ''}
+        <form method="POST" action="/painel/gerenciar/usuarios/${alvo.id}/senha">
+          <div class="form-group"><label>Nova senha</label><input class="form-control" type="password" name="nova_senha" required minlength="6"></div>
+          <button class="btn btn-primary" type="submit">💾 Redefinir Senha</button>
+        </form>
+      </div>
+    </div>`;
+  res.send(layout(user, `🔑 Senha — ${alvo.username}`, body, 'gerenciar'));
+});
+
+router.post('/gerenciar/usuarios/:id/senha', auth.middlewareAba('gerenciar'), express.urlencoded({extended:false}), (req, res) => {
+  const user = req.dashUser;
+  if (user.cargo !== 'dono' && user.cargo !== 'sub_dono') return res.redirect('/painel/gerenciar');
+  const { nova_senha } = req.body;
+  if (!nova_senha || nova_senha.length < 6) return res.redirect(`/painel/gerenciar/usuarios/${req.params.id}/senha?err=short`);
+  const { db } = getMainDb();
+  db.prepare('UPDATE dash_usuarios SET password=? WHERE id=?').run(auth.hashPass(nova_senha), req.params.id);
+  dashDb.resetarIp(req.params.id); // Invalida sessões antigas
+  res.redirect('/painel/gerenciar?msg=ok');
+});
+
+// ─── PERFIL ───────────────────────────────────────────────────
+router.get('/perfil', auth.requireAuth, (req, res) => {
+  const { db } = getMainDb();
+  const user   = req.dashUser;
+
+  // Dados do Discord
+  const discordUser = db.prepare('SELECT * FROM usuarios WHERE discord_id=?').get(user.discord_id);
+  const nivel       = discordUser?.nivel || 'Bronze';
+  const saldo       = discordUser?.saldo || 0;
+  const coins       = discordUser?.coins || 0;
+  const totalGasto  = discordUser?.total_gasto || 0;
+  const totalCompras= discordUser?.total_compras || 0;
+
+  // Últimos 10 pedidos
+  const pedidos = db.prepare(`
+    SELECT p.*, pr.nome as produto_nome, pr.imagem_url as produto_img
+    FROM pedidos p
+    LEFT JOIN produtos pr ON p.produto_id = pr.id
+    WHERE p.usuario_id = ?
+    ORDER BY p.criado_em DESC LIMIT 10
+  `).all(user.discord_id);
+
+  const ci = CARGO_LABELS[user.cargo] || CARGO_LABELS.cliente;
+  const msg = req.query.msg || '';
+
+  const body = `
+    ${msg === 'ok' ? `<div class="alert alert-success">✅ Senha alterada com sucesso!</div>` : ''}
+    ${msg === 'err' ? `<div class="alert alert-error">❌ Senha atual incorreta.</div>` : ''}
+
+    <div style="display:grid;grid-template-columns:300px 1fr;gap:24px;margin-bottom:28px">
+      <div class="stat-card" style="--glow-a:${ci.color.replace('#','')};--glow-b:7c3aed">
+        <div style="text-align:center;padding:10px 0">
+          <div style="width:72px;height:72px;border-radius:50%;background:linear-gradient(135deg,var(--accent),var(--blue));display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:800;margin:0 auto 14px">${user.username[0].toUpperCase()}</div>
+          <div style="font-size:20px;font-weight:800;color:#fff">${user.username}</div>
+          <div style="color:${ci.color};font-size:13px;font-weight:600;margin-top:4px">${ci.icon} ${ci.label}</div>
+          <div style="color:#7878a0;font-size:12px;margin-top:6px">Discord: <code>${user.discord_id}</code></div>
+        </div>
+      </div>
+      <div class="stats-grid" style="margin-bottom:0;align-content:start">
+        <div class="stat-card" style="--glow-a:22c55e;--glow-b:16a34a">
+          <div class="stat-label">Total Gasto</div>
+          <div class="stat-value" style="color:#86efac;font-size:22px">${fmtMoeda(totalGasto)}</div>
+          <div class="stat-sub">${totalCompras} compra(s)</div>
+        </div>
+        <div class="stat-card" style="--glow-a:f59e0b;--glow-b:d97706">
+          <div class="stat-label">Coins</div>
+          <div class="stat-value" style="color:#fde68a;font-size:22px">🪙 ${Number(coins).toLocaleString('pt-BR')}</div>
+          <div class="stat-sub">Saldo: ${fmtMoeda(saldo)}</div>
+        </div>
+        <div class="stat-card" style="--glow-a:a855f7;--glow-b:7c3aed">
+          <div class="stat-label">Nível</div>
+          <div class="stat-value" style="color:#c4b5fd;font-size:22px">${nivel}</div>
+          <div class="stat-sub">Ranking de fidelidade</div>
+        </div>
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 340px;gap:24px">
+      <div class="table-card">
+        <div class="table-head"><span class="table-title">🛍️ Últimas Compras</span></div>
+        <table>
+          <tr><th>Produto</th><th>Valor</th><th>Data</th><th>Status</th><th></th></tr>
+          ${pedidos.length ? pedidos.map(p => `<tr>
+            <td style="display:flex;align-items:center;gap:10px">
+              ${p.produto_img ? `<img src="${p.produto_img}" style="width:36px;height:36px;border-radius:6px;object-fit:cover">` : '<div style="width:36px;height:36px;border-radius:6px;background:var(--card2);display:flex;align-items:center;justify-content:center">📦</div>'}
+              <span>${p.produto_nome || '—'}</span>
+            </td>
+            <td style="color:#86efac;font-weight:700">${fmtMoeda(p.valor_total)}</td>
+            <td>${fmtDate(p.criado_em)}</td>
+            <td>${badge(p.status)}</td>
+            <td><a href="/painel/loja" class="btn btn-sm btn-ghost">Ver loja →</a></td>
+          </tr>`).join('') : '<tr><td colspan="5" style="text-align:center;color:#7878a0;padding:24px">Nenhuma compra ainda</td></tr>'}
+        </table>
+      </div>
+
+      <div class="table-card">
+        <div class="table-head"><span class="table-title">🔑 Alterar Senha</span></div>
+        <div style="padding:20px">
+          <form method="POST" action="/painel/perfil/senha">
+            <div class="form-group">
+              <label>Senha atual</label>
+              <input class="form-control" type="password" name="senha_atual" required>
+            </div>
+            <div class="form-group">
+              <label>Nova senha</label>
+              <input class="form-control" type="password" name="nova_senha" required minlength="6">
+            </div>
+            <div class="form-group">
+              <label>Confirmar nova senha</label>
+              <input class="form-control" type="password" name="confirmar_senha" required minlength="6">
+            </div>
+            <button class="btn btn-primary" style="width:100%" type="submit">💾 Salvar Nova Senha</button>
+          </form>
+        </div>
+      </div>
+    </div>`;
+
+  res.send(layout(user, '👤 Meu Perfil', body, 'perfil'));
+});
+
+router.post('/perfil/senha', auth.requireAuth, express.urlencoded({extended:false}), (req, res) => {
+  const user = req.dashUser;
+  const { senha_atual, nova_senha, confirmar_senha } = req.body;
+  const { db } = getMainDb();
+
+  const u = dashDb.getUsuario(user.id);
+  if (u.password !== auth.hashPass(senha_atual))
+    return res.redirect('/painel/perfil?msg=err');
+  if (nova_senha !== confirmar_senha)
+    return res.redirect('/painel/perfil?msg=err');
+  if (nova_senha.length < 6)
+    return res.redirect('/painel/perfil?msg=err');
+
+  db.prepare('UPDATE dash_usuarios SET password=? WHERE id=?').run(auth.hashPass(nova_senha), user.id);
+  res.redirect('/painel/perfil?msg=ok');
 });
 
 module.exports = router;
