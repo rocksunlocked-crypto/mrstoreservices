@@ -120,8 +120,8 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#7c3aed08}
 .main > *{animation:fadeInUp .3s ease-out both}
 .main > *:nth-child(2){animation-delay:.05s}
 .main > *:nth-child(3){animation-delay:.1s}
-@media(max-width:900px){:root{--sidebar-w:64px}.sidebar-logo .brand,.sidebar-logo .sub,.nav-item span,.user-info{display:none}.nav-item{padding:12px;justify-content:center}.main{padding:16px}.stats-grid{grid-template-columns:repeat(2,1fr)}.produtos-grid{grid-template-columns:repeat(2,1fr)}}
-@media(max-width:480px){.stats-grid,.produtos-grid{grid-template-columns:1fr}}
+@media(max-width:900px){:root{--sidebar-w:0px}.sidebar{transform:translateX(-240px);transition:transform .25s ease;width:240px;position:fixed;z-index:200}.sidebar.open{transform:translateX(0)}.main{margin-left:0;padding:14px}.stats-grid{grid-template-columns:repeat(2,1fr)}.produtos-grid{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:480px){.stats-grid,.produtos-grid{grid-template-columns:1fr}.main{padding:10px}.page-title{font-size:20px}th,td{padding:7px 8px;font-size:12px}}
 </style>
 <script>
 (function(){
@@ -203,10 +203,16 @@ function layout(user, title, body, activePage = '') {
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${title} — MrStore</title>
 ${CSS}
+<style>
+.hamburger{display:none;position:fixed;top:14px;left:14px;z-index:300;background:linear-gradient(135deg,#7c3aed,#5b21b6);border:none;border-radius:9px;width:40px;height:40px;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 4px 15px #7c3aed40;color:#fff;font-size:20px}
+@media(max-width:900px){.hamburger{display:flex}.main{padding-top:60px!important}}
+</style>
 </head>
 <body>
+<button class="hamburger" onclick="toggleMenu()" id="ham-btn">☰</button>
+<div id="sidebar-overlay" style="display:none;position:fixed;inset:0;background:#00000070;z-index:199" onclick="toggleMenu()"></div>
 <div class="layout">
-  <aside class="sidebar">
+  <aside class="sidebar" id="sidebar">
     <div class="sidebar-logo">
       <div class="brand">MrStore</div>
       <div class="sub">Painel de Controle</div>
@@ -228,6 +234,26 @@ ${CSS}
     ${body}
   </main>
 </div>
+<script>
+function toggleMenu(){
+  const s=document.getElementById('sidebar');
+  const o=document.getElementById('sidebar-overlay');
+  const h=document.getElementById('ham-btn');
+  const open=s.classList.toggle('open');
+  o.style.display=open?'block':'none';
+  h.textContent=open?'✕':'☰';
+}
+// Fechar menu ao clicar num link
+document.querySelectorAll('.nav-item').forEach(a=>{
+  a.addEventListener('click',()=>{
+    if(window.innerWidth<=900){
+      document.getElementById('sidebar').classList.remove('open');
+      document.getElementById('sidebar-overlay').style.display='none';
+      document.getElementById('ham-btn').textContent='☰';
+    }
+  });
+});
+</script>
 </body>
 </html>`;
 }

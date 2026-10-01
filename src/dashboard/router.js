@@ -77,8 +77,16 @@ router.post('/login', express.urlencoded({ extended: false }), async (req, res) 
   dashDb.atualizarAcesso(user.id);
   const token = auth.criarSessao(user.id, ip);
   res.setHeader('Set-Cookie', `dash_sess=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${86400 * 7}`);
-  // Clientes vão direto pra loja, outros pro overview
-  const destino = user.cargo === 'cliente' ? '/painel/loja' : '/painel';
+
+  // Redirecionar para a primeira aba que o cargo tem acesso
+  const ABAS_ORDEM = ['overview','loja','solicitar','solicitacoes','usuarios','produtos','pedidos','tickets','cupons','gerenciar'];
+  let destino = '/painel/loja'; // fallback
+  for (const aba of ABAS_ORDEM) {
+    if (dashDb.podeVer(user.cargo, aba)) {
+      destino = aba === 'overview' ? '/painel' : `/painel/${aba}`;
+      break;
+    }
+  }
   res.redirect(destino);
 });
 
