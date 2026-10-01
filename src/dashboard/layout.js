@@ -189,7 +189,7 @@ function layout(user, title, body, activePage = '') {
   const navItems = Object.entries(ABAS_INFO)
     .filter(([aba]) => aba === 'perfil' || podeVer(cargo, aba))
     .map(([aba, info]) => `
-      <a href="/painel/${aba === 'overview' ? '' : aba}" class="nav-item${activePage === aba ? ' active' : ''}">
+      <a href="/painel/${aba === 'overview' ? '' : aba.replace(/_/g, '-')}" class="nav-item${activePage === aba ? ' active' : ''}">
         <span class="icon">${info.icon}</span>
         <span>${info.label}</span>
       </a>
