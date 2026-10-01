@@ -27,15 +27,40 @@ async function importarBackupBanco(message) {
   }
 
   try {
-    const anexo          = message.attachments.first();
-    const arquivoDestino = path.resolve(process.cwd(), config.dbPath || path.join('data', 'database.db'));
-    fs.mkdirSync(path.dirname(arquivoDestino), { recursive: true });
+    const dataDir = path.resolve(process.cwd(), 'data');
+    fs.mkdirSync(dataDir, { recursive: true });
 
-    const resposta = await fetch(anexo.url);
-    if (!resposta.ok) throw new Error(`Falha ao baixar o arquivo (${resposta.status})`);
+    // Baixar todos os anexos (db, db-wal, db-shm)
+    for (const [, anexo] of message.attachments) {
+      const nome = anexo.name;
+      if (!nome.endsWith('.db') && !nome.endsWith('.db-wal') && !nome.endsWith('.db-shm')) continue;
 
-    fs.writeFileSync(arquivoDestino, Buffer.from(await resposta.arrayBuffer()));
-    await message.reply(`✅ Banco importado com sucesso!\n📁 \`${arquivoDestino}\`\n\n⚠️ **Reinicie o bot** para carregar os dados novos.`).catch(() => {});
+      // Normalizar nome — sempre salvar como database.db / database.db-wal / database.db-shm
+      const ext = nome.includes('.db-wal') ? '.db-wal' : nome.includes('.db-shm') ? '.db-shm' : '.db';
+      const destino = path.join(dataDir, `database${ext}`);
+
+      const resposta = await fetch(anexo.url);
+      if (!resposta.ok) throw new Error(`Falha ao baixar ${nome} (${resposta.status})`);
+      fs.writeFileSync(destino, Buffer.from(await resposta.arrayBuffer()));
+      console.log(`[Importar] ${nome} → ${destino}`);
+    }
+
+    // Fazer checkpoint WAL para consolidar tudo no .db principal
+    try {
+      const Database = require('better-sqlite3');
+      const db = new Database(path.join(dataDir, 'database.db'));
+      db.pragma('wal_checkpoint(TRUNCATE)');
+      db.close();
+      console.log('[Importar] WAL checkpoint concluído.');
+    } catch (e) { console.error('[Importar] Checkpoint WAL:', e.message); }
+
+    await message.reply([
+      `✅ **Banco importado com sucesso!**`,
+      `📁 \`${dataDir}\``,
+      ``,
+      `⚠️ **Reinicie o bot** no Railway para carregar os dados.`,
+      `> No Railway: clique no serviço → **Restart**`,
+    ].join('\n')).catch(() => {});
   } catch (error) {
     await message.reply(`❌ Erro ao importar: ${error.message}`).catch(() => {});
   }
