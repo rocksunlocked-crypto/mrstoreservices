@@ -353,7 +353,11 @@ router.get('/loja/comprar/:produtoId', auth.middlewareAba('loja'), (req, res) =>
 
   // Stripe disponível?
   const stripeOk = !!process.env.STRIPE_SECRET_KEY;
-  const MOEDAS_STRIPE = { USD:'🇺🇸 USD', EUR:'🇪🇺 EUR', GBP:'🇬🇧 GBP', BRL:'🇧🇷 BRL' };
+
+  // Todas as moedas do Stripe
+  const TODAS_MOEDAS = stripeOk ? (() => {
+    try { return require('../systems/stripe').MOEDAS || {}; } catch { return {}; }
+  })() : {};
 
   const imgSrc = prod.imagem_url
     ? (prod.imagem_url.includes('cdn.discordapp.com/attachments')
@@ -376,10 +380,12 @@ router.get('/loja/comprar/:produtoId', auth.middlewareAba('loja'), (req, res) =>
       <div>
         <h2 style="font-size:24px;font-weight:900;margin-bottom:8px;background:linear-gradient(135deg,#fff,#c4b5fd);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text">${prod.nome}</h2>
         <p style="color:#7070a0;margin-bottom:20px;line-height:1.6">${prod.descricao || ''}</p>
-        <form method="POST" action="/painel/loja/finalizar" id="form-compra">
+
+        <!-- Formulário PIX (padrão) -->
+        <form method="POST" action="/painel/loja/finalizar" id="form-pix">
           <input type="hidden" name="produto_id" value="${prod.id}">
-          <input type="hidden" name="metodo_pag" id="input-metodo" value="pix">
-          ${variantes.length ? `<div class="form-group"><label>Variante / Plano</label><select class="form-control" name="variante_id" required>${varOptions}</select></div>` : ''}
+          <input type="hidden" name="metodo_pag" value="pix">
+          ${variantes.length ? `<div class="form-group"><label>Variante / Plano</label><select class="form-control" name="variante_id" id="var-pix" required>${varOptions}</select></div>` : ''}
           <div class="form-group">
             <label>Quantidade</label>
             <div style="display:flex;align-items:center;gap:10px">
@@ -390,36 +396,82 @@ router.get('/loja/comprar/:produtoId', auth.middlewareAba('loja'), (req, res) =>
           </div>
           <div class="form-group">
             <label>Cupom (opcional)</label>
-            <input class="form-control" name="cupom" placeholder="Código do cupom">
+            <input class="form-control" name="cupom" id="cupom-pix" placeholder="Código do cupom">
           </div>
-          <div style="margin-bottom:18px">
-            <div style="font-size:11px;color:#7070a0;font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">Forma de Pagamento</div>
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-              <button type="button" onclick="selecionarPag('pix',this)" class="btn btn-success pag-btn pag-ativo" style="font-size:12px">💠 PIX (R$)</button>
-              ${stripeOk ? Object.entries(MOEDAS_STRIPE).map(([m,l]) =>
-                `<button type="button" onclick="selecionarPag('stripe_${m.toLowerCase()}',this)" class="btn btn-ghost pag-btn" style="font-size:12px">${l}</button>`
-              ).join('') : ''}
-            </div>
+          <div style="display:grid;grid-template-columns:1fr ${stripeOk ? '1fr' : ''};gap:10px;margin-top:8px">
+            <button class="btn btn-success" style="padding:12px;font-size:15px;font-weight:800" type="submit">💠 Pagar com PIX</button>
+            ${stripeOk ? `<button type="button" onclick="abrirModalMoeda()" class="btn btn-primary" style="padding:12px;font-size:15px;font-weight:800">💳 Outra Moeda</button>` : ''}
           </div>
-          <button class="btn btn-primary" style="width:100%;padding:12px;font-size:15px;font-weight:800" type="submit">🛒 Finalizar Compra</button>
         </form>
       </div>
     </div>
+
+    ${stripeOk ? `
+    <!-- Modal de seleção de moeda -->
+    <div id="modal-moeda" style="display:none;position:fixed;inset:0;z-index:9999;background:#00000090;backdrop-filter:blur(4px);align-items:center;justify-content:center">
+      <div style="background:#0d0d20;border:1px solid #7c3aed40;border-radius:16px;padding:28px;width:min(520px,94vw);max-height:85vh;overflow-y:auto;box-shadow:0 24px 60px #00000080">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+          <div style="font-size:17px;font-weight:800;color:#fff">💳 Escolher Moeda</div>
+          <button onclick="fecharModalMoeda()" style="background:none;border:none;color:#7070a0;font-size:22px;cursor:pointer">✕</button>
+        </div>
+        <input id="busca-moeda" oninput="filtrarMoedas()" class="form-control" placeholder="🔍 Pesquisar moeda..." style="margin-bottom:14px">
+        <div id="lista-moedas" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px">
+          ${Object.entries(TODAS_MOEDAS).map(([code, m]) => `
+            <button onclick="selecionarMoeda('${code}')" data-nome="${m.nome.toLowerCase()} ${code.toLowerCase()}" class="btn btn-ghost moeda-btn" style="justify-content:flex-start;gap:10px;padding:10px 12px;font-size:13px;text-align:left">
+              <span style="font-size:20px">${m.emoji}</span>
+              <div>
+                <div style="font-weight:700;color:#fff">${code}</div>
+                <div style="font-size:11px;color:#7070a0">${m.nome}</div>
+              </div>
+            </button>
+          `).join('')}
+        </div>
+      </div>
+    </div>
+
+    <!-- Formulário Stripe (submete ao escolher moeda) -->
+    <form method="POST" action="/painel/loja/finalizar" id="form-stripe" style="display:none">
+      <input type="hidden" name="produto_id" value="${prod.id}">
+      <input type="hidden" name="metodo_pag" id="stripe-metodo" value="">
+      <input type="hidden" name="variante_id" id="stripe-variante" value="">
+      <input type="hidden" name="quantidade" id="stripe-qtd" value="1">
+      <input type="hidden" name="cupom" id="stripe-cupom" value="">
+    </form>` : ''}
+
     <script>
-    function selecionarPag(metodo, btn) {
-      document.getElementById('input-metodo').value = metodo;
-      document.querySelectorAll('.pag-btn').forEach(b => b.classList.remove('pag-ativo','btn-success','btn-primary'));
-      document.querySelectorAll('.pag-btn').forEach(b => b.classList.add('btn-ghost'));
-      btn.classList.remove('btn-ghost');
-      btn.classList.add(metodo==='pix'?'btn-success':'btn-primary','pag-ativo');
-    }
     function ajustarQtd(delta) {
       const inp = document.getElementById('inp-qtd');
       let v = parseInt(inp.value) + delta;
       inp.value = Math.max(1, Math.min(99, v));
     }
-    </script>
-    <style>.pag-ativo{box-shadow:0 0 12px rgba(124,58,237,.4)!important}</style>`;
+    function abrirModalMoeda() {
+      document.getElementById('modal-moeda').style.display='flex';
+      document.getElementById('busca-moeda').focus();
+    }
+    function fecharModalMoeda() {
+      document.getElementById('modal-moeda').style.display='none';
+    }
+    function filtrarMoedas() {
+      const q = document.getElementById('busca-moeda').value.toLowerCase();
+      document.querySelectorAll('.moeda-btn').forEach(btn => {
+        btn.style.display = btn.dataset.nome.includes(q) ? '' : 'none';
+      });
+    }
+    function selecionarMoeda(code) {
+      // Copiar dados do form PIX para o form Stripe
+      const varEl = document.getElementById('var-pix');
+      document.getElementById('stripe-metodo').value = 'stripe_' + code.toLowerCase();
+      document.getElementById('stripe-variante').value = varEl ? varEl.value : '';
+      document.getElementById('stripe-qtd').value = document.getElementById('inp-qtd').value;
+      document.getElementById('stripe-cupom').value = document.getElementById('cupom-pix').value;
+      fecharModalMoeda();
+      document.getElementById('form-stripe').submit();
+    }
+    // Fechar modal clicando fora
+    document.getElementById('modal-moeda')?.addEventListener('click', function(e) {
+      if(e.target===this) fecharModalMoeda();
+    });
+    </script>`;
 
   res.send(layout(user, `🛍️ ${prod.nome}`, body, 'loja'));
 });
