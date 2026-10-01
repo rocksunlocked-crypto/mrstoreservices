@@ -1,11 +1,11 @@
-const {
+﻿const {
   SlashCommandBuilder, EmbedBuilder, ActionRowBuilder,
   ButtonBuilder, ButtonStyle, StringSelectMenuBuilder,
   PermissionFlagsBits,
 } = require('discord.js');
-const db = require('../database/ticketsDb');
-const { isAdmin, isStaff, getCategoryName, formatDate, getDuration } = require('../utils/ticketHelpers');
-const { getSLAStatus, progressBar, formatMinutes } = require('../systems/ticket_slaSystem');
+const db = require('../../database/ticketsDb');
+const { isAdmin, isStaff, getCategoryName, formatDate, getDuration } = require('../../utils/ticketHelpers');
+const { getSLAStatus, progressBar, formatMinutes } = require('../../systems/ticket_slaSystem');
 const config = require('../../config');
 
 module.exports = {

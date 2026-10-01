@@ -1,7 +1,7 @@
-const { SlashCommandBuilder, EmbedBuilder, AttachmentBuilder } = require('discord.js');
-const db = require('../database/ticketsDb');
-const { isStaff, formatDate, getCategoryName } = require('../utils/ticketHelpers');
-const { getSLAStatus, progressBar, formatMinutes } = require('../systems/ticket_slaSystem');
+﻿const { SlashCommandBuilder, EmbedBuilder, AttachmentBuilder } = require('discord.js');
+const db = require('../../database/ticketsDb');
+const { isStaff, formatDate, getCategoryName } = require('../../utils/ticketHelpers');
+const { getSLAStatus, progressBar, formatMinutes } = require('../../systems/ticket_slaSystem');
 const config = require('../../config');
 
 // ── Gráfico de barras ASCII ──────────────────────────────────

@@ -1,5 +1,5 @@
-const { SlashCommandBuilder } = require('discord.js');
-const { openTicket } = require('../tickets/ticketManager');
+﻿const { SlashCommandBuilder } = require('discord.js');
+const { openTicket } = require('../../tickets/ticketManager');
 
 module.exports = {
   data: new SlashCommandBuilder()

@@ -1,7 +1,7 @@
-const { SlashCommandBuilder } = require('discord.js');
-const db = require('../database/ticketsDb');
-const { errorEmbed } = require('../utils/ticketHelpers');
-const { buildTicketInfoEmbed } = require('../tickets/panelBuilder');
+﻿const { SlashCommandBuilder } = require('discord.js');
+const db = require('../../database/ticketsDb');
+const { errorEmbed } = require('../../utils/ticketHelpers');
+const { buildTicketInfoEmbed } = require('../../tickets/panelBuilder');
 
 module.exports = {
   data: new SlashCommandBuilder()

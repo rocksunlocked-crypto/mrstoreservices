@@ -1,6 +1,6 @@
-const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
-const db = require('../database/ticketsDb');
-const { isAdmin, errorEmbed, successEmbed } = require('../utils/ticketHelpers');
+﻿const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
+const db = require('../../database/ticketsDb');
+const { isAdmin, errorEmbed, successEmbed } = require('../../utils/ticketHelpers');
 
 module.exports = {
   data: new SlashCommandBuilder()

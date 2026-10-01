@@ -1,6 +1,6 @@
-const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
-const db = require('../database/ticketsDb');
-const { getCategoryName, formatDate, getDuration } = require('../utils/ticketHelpers');
+﻿const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const db = require('../../database/ticketsDb');
+const { getCategoryName, formatDate, getDuration } = require('../../utils/ticketHelpers');
 const config = require('../../config');
 
 module.exports = {

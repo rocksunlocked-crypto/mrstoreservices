@@ -1,6 +1,6 @@
-const { SlashCommandBuilder, ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder } = require('discord.js');
-const db = require('../database/ticketsDb');
-const { isStaff, errorEmbed } = require('../utils/ticketHelpers');
+﻿const { SlashCommandBuilder, ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder } = require('discord.js');
+const db = require('../../database/ticketsDb');
+const { isStaff, errorEmbed } = require('../../utils/ticketHelpers');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -19,7 +19,7 @@ module.exports = {
     }
 
     const motivo = interaction.options.getString('motivo') || 'Fechado via comando';
-    const { closeTicket } = require('../tickets/ticketManager');
+    const { closeTicket } = require('../../tickets/ticketManager');
     await closeTicket(interaction, ticket, motivo);
   },
 };

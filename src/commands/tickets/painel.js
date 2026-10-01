@@ -1,7 +1,7 @@
-const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
-const { buildTicketPanel } = require('../tickets/panelBuilder');
-const { savePanel } = require('../database/ticketsDb');
-const { isAdmin } = require('../utils/ticketHelpers');
+﻿const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
+const { buildTicketPanel } = require('../../tickets/panelBuilder');
+const { savePanel } = require('../../database/ticketsDb');
+const { isAdmin } = require('../../utils/ticketHelpers');
 
 module.exports = {
   data: new SlashCommandBuilder()

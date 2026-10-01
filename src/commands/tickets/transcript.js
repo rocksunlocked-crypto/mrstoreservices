@@ -1,7 +1,7 @@
-const { SlashCommandBuilder } = require('discord.js');
-const db = require('../database/ticketsDb');
-const { isStaff, errorEmbed, successEmbed } = require('../utils/ticketHelpers');
-const { sendTranscript } = require('../utils/ticketTranscript');
+﻿const { SlashCommandBuilder } = require('discord.js');
+const db = require('../../database/ticketsDb');
+const { isStaff, errorEmbed, successEmbed } = require('../../utils/ticketHelpers');
+const { sendTranscript } = require('../../utils/ticketTranscript');
 const config = require('../../config');
 
 module.exports = {
