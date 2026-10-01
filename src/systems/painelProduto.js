@@ -399,7 +399,7 @@ async function atualizarPainelProduto(guild, painelId) {
     const produto = db.prepare('SELECT * FROM produtos WHERE id=?').get(painel.produto_id);
     if (!produto) return;
 
-    const variantes = db.prepare('SELECT * FROM variantes_produto WHERE produto_id=? AND ativo=1 ORDER BY preco ASC').all(produtoId);
+    const variantes = db.prepare('SELECT * FROM variantes_produto WHERE produto_id=? AND ativo=1 ORDER BY preco ASC').all(painel.produto_id);
     console.log(`[PainelProduto] Atualizando ${painelId.slice(0,8)} — ${produto.nome} — ${variantes.length} variante(s)`);
 
     const canal = guild.channels.cache.get(painel.canal_id);
