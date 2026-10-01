@@ -121,8 +121,22 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#7c3aed08}
 .main > *{animation:fadeInUp .3s ease-out both}
 .main > *:nth-child(2){animation-delay:.05s}
 .main > *:nth-child(3){animation-delay:.1s}
-@media(max-width:900px){:root{--sidebar-w:0px}.sidebar{transform:translateX(-240px);transition:transform .25s ease;width:240px;position:fixed;z-index:200}.sidebar.open{transform:translateX(0)}.main{margin-left:0;padding:14px}.stats-grid{grid-template-columns:repeat(2,1fr)}.produtos-grid{grid-template-columns:repeat(2,1fr)}[style*="grid-template-columns"]{grid-template-columns:1fr!important}}
-@media(max-width:600px){.stats-grid,.produtos-grid{grid-template-columns:1fr}.main{padding:10px}.page-title{font-size:18px}th,td{padding:7px 8px;font-size:12px}table{display:block;overflow-x:auto;-webkit-overflow-scrolling:touch}}
+@media(max-width:900px){
+  :root{--sidebar-w:0px}
+  .sidebar{transform:translateX(-100%);transition:transform .25s ease;width:240px;position:fixed;top:0;left:0;bottom:0;z-index:999}
+  .sidebar.open{transform:translateX(0)}
+  .main{margin-left:0;padding:14px}
+  .stats-grid{grid-template-columns:repeat(2,1fr)}
+  .produtos-grid{grid-template-columns:repeat(2,1fr)}
+  [style*="grid-template-columns"]{grid-template-columns:1fr!important}
+}
+@media(max-width:600px){
+  .stats-grid,.produtos-grid{grid-template-columns:1fr}
+  .main{padding:10px}
+  .page-title{font-size:18px}
+  th,td{padding:7px 8px;font-size:12px}
+  table{display:block;overflow-x:auto;-webkit-overflow-scrolling:touch}
+}
 </style>
 <script>
 (function(){
@@ -229,7 +243,7 @@ ${CSS}
       <a href="/painel/logout" class="logout-btn">🚪 Sair da conta</a>
     </div>
   </aside>
-  <div id="sb-backdrop" onclick="fecharMenu()" style="display:none;position:fixed;inset:0;z-index:205;background:#00000060"></div>
+  <div id="sb-backdrop" onclick="fecharMenu()" style="display:none;position:fixed;inset:0;z-index:998;background:#00000070;-webkit-tap-highlight-color:transparent"></div>
   <main class="main">
     <div class="page-header"><div class="page-title">${title}</div></div>
     ${body}
@@ -237,8 +251,7 @@ ${CSS}
 </div>
 <script>
 function toggleMenu(){
-  const aberto=document.getElementById('sidebar').classList.contains('open');
-  aberto?fecharMenu():abrirMenu();
+  document.getElementById('sidebar').classList.contains('open')?fecharMenu():abrirMenu();
 }
 function abrirMenu(){
   document.getElementById('sidebar').classList.add('open');
