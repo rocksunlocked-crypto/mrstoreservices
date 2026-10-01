@@ -188,6 +188,9 @@ client.once('ready', async () => {
 
   setClient(client);
 
+  // Registrar client no clientRef para uso pelo dashboard/webhook
+  require('./utils/clientRef').setClient(client);
+
   const guild = client.guilds.cache.get(config.guildId)
     ?? await client.guilds.fetch(config.guildId).catch(() => null);
 
