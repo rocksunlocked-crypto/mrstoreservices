@@ -22,6 +22,7 @@ const ABAS_INFO = {
   tickets:      { icon: '🎫', label: 'Tickets'         },
   cupons:       { icon: '🎟️', label: 'Cupons'          },
   gerenciar:    { icon: '⚙️', label: 'Gerenciar'       },
+  config_mr:    { icon: '🔧', label: 'Config. Mr'      },
 };
 
 // CSS é uma string JS válida — todo o conteúdo dentro de backticks

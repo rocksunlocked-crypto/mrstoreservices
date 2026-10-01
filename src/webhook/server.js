@@ -24,6 +24,7 @@ app.use((req, res, next) => {
 // ─── Dashboard ────────────────────────────────────────────────────────────────
 // initDashDB é chamado no start() após o banco principal estar pronto
 app.use('/painel', require('../dashboard/router'));
+app.use('/painel/config-mr', require('../dashboard/configMr'));
 // Redirecionar /dashboard para /painel (compatibilidade)
 app.get('/dashboard*', (req, res) => res.redirect(301, req.url.replace('/dashboard', '/painel')));
 

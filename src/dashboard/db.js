@@ -51,7 +51,7 @@ function initDashDB() {
   `);
 
   // Permissões padrão por cargo (dono pode mudar)
-  const ABAS = ['overview','loja','perfil','solicitar','solicitacoes','usuarios','produtos','pedidos','tickets','cupons','gerenciar'];
+  const ABAS = ['overview','loja','perfil','solicitar','solicitacoes','usuarios','produtos','pedidos','tickets','cupons','gerenciar','config_mr'];
   const DEFAULTS = {
     cliente:    ['loja','perfil'],
     staff:      ['loja','perfil','solicitar','usuarios'],
