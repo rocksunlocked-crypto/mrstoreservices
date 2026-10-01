@@ -717,18 +717,22 @@ async function confirmarPedidoDash(pedidoId, dbIn) {
     // Enviar DM e log no Discord
     const clientRef = require('../utils/clientRef');
     const client    = clientRef.getClient();
+    console.log(`[DashDM] client=${!!client} usuario_id=${pedido.usuario_id}`);
     if (client && pedido.usuario_id && pedido.usuario_id !== '0') {
       // DM para o usuário — busca no guild principal primeiro, depois tenta direto
       try {
         const GUILD_PRINCIPAL = process.env.GUILD_ID || '1522456699082903572';
         const guild  = client.guilds.cache.get(GUILD_PRINCIPAL) || client.guilds.cache.first();
+        console.log(`[DashDM] guild=${guild?.id} name=${guild?.name}`);
         let discordUser = null;
         if (guild) {
-          const member = await guild.members.fetch(pedido.usuario_id).catch(() => null);
+          const member = await guild.members.fetch(pedido.usuario_id).catch(e => { console.warn('[DashDM] fetch member error:', e.message); return null; });
           discordUser = member?.user || null;
+          console.log(`[DashDM] member=${!!member} discordUser=${!!discordUser}`);
         }
         if (!discordUser) {
-          discordUser = await client.users.fetch(pedido.usuario_id).catch(() => null);
+          discordUser = await client.users.fetch(pedido.usuario_id).catch(e => { console.warn('[DashDM] fetch user error:', e.message); return null; });
+          console.log(`[DashDM] fallback fetch user=${!!discordUser}`);
         }
         if (discordUser) {
           const { EmbedBuilder } = require('discord.js');
