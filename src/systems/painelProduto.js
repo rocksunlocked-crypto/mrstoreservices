@@ -260,12 +260,17 @@ async function publicarPainel(interaction, estado, client) {
   const canal = guild.channels.cache.get(estado.canalId);
   if (!canal) return interaction.editReply({ content: '❌ Canal não encontrado.' });
 
+  // Detectar categoria do Discord pelo canal pai
+  const categoriaDiscord = canal.parent?.name
+    ? canal.parent.name.replace(/[^\w\s\-áàâãéèêíìîóòôõúùûçÁÀÂÃÉÈÊÍÌÎÓÒÔÕÚÙÛÇ]/g, '').trim()
+    : 'Geral';
+
   // Criar produto no banco
   const produtoId = uuidv4();
   db.prepare(`
-    INSERT INTO produtos (id, nome, descricao, preco, imagem_url, tipo, ativo, criado_por)
-    VALUES (?,?,?,?,?,?,1,?)
-  `).run(produtoId, estado.titulo, estado.descricao, 0, estado.imagemUrl || null, 'digital', interaction.user.id);
+    INSERT INTO produtos (id, nome, descricao, preco, imagem_url, tipo, ativo, criado_por, categoria)
+    VALUES (?,?,?,?,?,?,1,?,?)
+  `).run(produtoId, estado.titulo, estado.descricao, 0, estado.imagemUrl || null, 'digital', interaction.user.id, categoriaDiscord);
 
   // Criar variantes no banco
   for (let i = 0; i < estado.variantes.length; i++) {

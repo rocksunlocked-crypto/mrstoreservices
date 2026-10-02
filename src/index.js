@@ -373,15 +373,23 @@ client.on('interactionCreate', async (interaction) => {
       const id = interaction.customId;
 
       // Sistema de tickets avançado — todos os prefixos
+      // ticket_assumir / ticket_fechar / ticket_transcript / ticket_aceitar_sem_pag_ / ticket_pagar_ / ticket_banir_fraude
+      // são tratados pelo buttons.js (sistema de compras), não pelo ticketInteractionHandler
+      const LOJA_TICKET_IDS = ['ticket_assumir', 'ticket_fechar', 'ticket_transcript', 'ticket_banir_fraude'];
+      const LOJA_TICKET_PREFIXES = ['ticket_aceitar_sem_pag_', 'ticket_pagar_'];
+      const ehLoja = LOJA_TICKET_IDS.includes(id) || LOJA_TICKET_PREFIXES.some(p => id.startsWith(p));
+
       if (
-        id.startsWith('ticket_')     ||
-        id.startsWith('autoclose_')  ||
-        id.startsWith('rating_')     ||
-        id.startsWith('tmenu_')      ||
-        id.startsWith('tchamar_')    ||
-        id.startsWith('tver_')       ||
-        id.startsWith('tgerar_')     ||
-        id.startsWith('tverificar_')
+        !ehLoja && (
+          id.startsWith('ticket_')     ||
+          id.startsWith('autoclose_')  ||
+          id.startsWith('rating_')     ||
+          id.startsWith('tmenu_')      ||
+          id.startsWith('tchamar_')    ||
+          id.startsWith('tver_')       ||
+          id.startsWith('tgerar_')     ||
+          id.startsWith('tverificar_')
+        )
       ) {
         return handleTicketInteraction(interaction);
       }

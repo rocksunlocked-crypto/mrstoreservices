@@ -286,8 +286,9 @@ router.get('/loja', auth.middlewareAba('loja'), (req, res) => {
 
   function imgTag(url, nome) {
     if (!url) return '<div style="width:100%;height:150px;background:linear-gradient(135deg,#12122a,#1a1a35);display:flex;align-items:center;justify-content:center;font-size:48px">📦</div>';
-    // Usar proxy para imagens Discord CDN que expiram
-    const src = url.includes('cdn.discordapp.com/attachments') ? `https://images.weserv.nl/?url=${encodeURIComponent(url)}&w=400&output=webp` : url;
+    // Proxy para qualquer URL do Discord CDN (expiram após algumas horas)
+    const isDiscord = url.includes('cdn.discordapp.com') || url.includes('media.discordapp.net');
+    const src = isDiscord ? `https://images.weserv.nl/?url=${encodeURIComponent(url)}&w=400&output=webp&maxage=7d` : url;
     return `<img src="${src}" alt="${nome}" loading="lazy" style="width:100%;height:150px;object-fit:cover" onerror="this.parentElement.innerHTML='<div style=\\'width:100%;height:150px;background:linear-gradient(135deg,#12122a,#1a1a35);display:flex;align-items:center;justify-content:center;font-size:48px\\'>📦</div>'">`;
   }
 
