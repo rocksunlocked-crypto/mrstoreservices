@@ -330,10 +330,12 @@ router.get('/loja', auth.middlewareAba('loja'), (req, res) => {
 
   const body = `
     ${msgAlerts[msg] || ''}
-    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:20px">
-      <form method="GET" style="display:flex;gap:8px;flex:1">
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:20px">
+      <form method="GET" style="display:flex;gap:8px">
         <input class="form-control" name="q" value="${search}" placeholder="Buscar produto..." style="max-width:280px">
+        <input type="hidden" name="cat" value="${catFiltro}">
       </form>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">${catTabs}</div>
     </div>
     ${lojaHtml || '<div style="text-align:center;color:#7070a0;padding:64px;font-size:18px">📦 Nenhum produto disponível</div>'}`;
 
