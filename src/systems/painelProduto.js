@@ -260,10 +260,33 @@ async function publicarPainel(interaction, estado, client) {
   const canal = guild.channels.cache.get(estado.canalId);
   if (!canal) return interaction.editReply({ content: '❌ Canal não encontrado.' });
 
-  // Detectar categoria do Discord pelo canal pai
-  const categoriaDiscord = canal.parent?.name
-    ? canal.parent.name.replace(/[^\w\s\-áàâãéèêíìîóòôõúùûçÁÀÂÃÉÈÊÍÌÎÓÒÔÕÚÙÛÇ]/g, '').trim()
-    : 'Geral';
+  // Mapeamento fixo canal_id → categoria (mesmo do sync de startup)
+  const CANAL_CATEGORIA = {
+    '1544831949531516938': 'Loja Free Fire',
+    '1554274779341783060': 'Loja Free Fire',
+    '1549523707293204490': 'Spoofer',
+    '1549538378561757294': 'Spoofer',
+    '1553981298064756857': 'Spoofer',
+    '1549538342066983003': 'Mod Menu FiveM',
+    '1549538423507910687': 'Mod Menu FiveM',
+    '1553979985700847626': 'Mod Menu FiveM',
+    '1552328037335433287': 'External',
+    '1551791388180611072': 'Combos',
+    '1551791731920478229': 'Combos',
+    '1544956134463504435': 'Contas FiveM',
+    '1544933939053989958': 'Contas FiveM',
+    '1544831892354900068': 'Contas FiveM',
+    '1544941555473719316': 'Contas FiveM',
+    '1551027859101974669': 'Contas FiveM',
+    '1541882411426517052': 'Contas FiveM',
+    '1548357068396695662': 'Loja Fluxo',
+    '1548356989019754606': 'Loja Fluxo',
+    '1551041996880220160': 'Loja Extra',
+    '1552359144227340298': 'Loja Extra',
+    '1545668271980941322': 'Loja Extra',
+  };
+  const categoriaDiscord = CANAL_CATEGORIA[canal.id]
+    || (canal.parent?.name ? canal.parent.name.replace(/[^\p{L}\p{N}\s\-]/gu,'').replace(/\s+/g,' ').trim() : 'Geral');
 
   // Criar produto no banco
   const produtoId = uuidv4();

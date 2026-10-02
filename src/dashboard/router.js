@@ -257,11 +257,20 @@ router.get('/loja', auth.middlewareAba('loja'), (req, res) => {
   const { db } = getMainDb();
   const user   = req.dashUser;
   const search = req.query.q   || '';
-  const catFiltro = req.query.cat || '';
+  let catFiltro = req.query.cat || '';
   const msg    = req.query.msg || '';
 
-  // Buscar categorias disponíveis
-  const categorias = db.prepare("SELECT DISTINCT categoria FROM produtos WHERE ativo=1 AND categoria IS NOT NULL ORDER BY categoria ASC").all().map(r => r.categoria).filter(Boolean);
+  // Ordem fixa das categorias
+  const ORDEM_CATS = ['Loja Free Fire','Spoofer','Mod Menu FiveM','External','Combos','Contas FiveM','Loja Fluxo','Loja Extra'];
+
+  // Buscar categorias disponíveis e ordenar conforme ORDEM_CATS
+  const catsNoDb = db.prepare("SELECT DISTINCT categoria FROM produtos WHERE ativo=1 AND categoria IS NOT NULL").all().map(r => r.categoria).filter(Boolean);
+  const categorias = [...ORDEM_CATS.filter(c => catsNoDb.includes(c)), ...catsNoDb.filter(c => !ORDEM_CATS.includes(c)).sort()];
+
+  // Se não tiver filtro de categoria e não for busca, redireciona para a primeira categoria
+  if (!catFiltro && !search && categorias.length > 0) {
+    return res.redirect(`/painel/loja?cat=${encodeURIComponent(categorias[0])}`);
+  }
 
   // Query com filtro de categoria e busca
   let whereParts = ['p.ativo=1'];
