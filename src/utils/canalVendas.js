@@ -37,6 +37,25 @@ async function logVenda(client, pedido, extras = {}) {
     const usuario  = db.prepare('SELECT * FROM usuarios WHERE discord_id=?').get(pedido.usuario_id);
     const afiliado = pedido.afiliado_id ? db.prepare('SELECT * FROM usuarios WHERE discord_id=?').get(pedido.afiliado_id) : null;
 
+    // Buscar variante e quantidade da nota_fiscal
+    let varianteNome = null;
+    const qtd = pedido.quantidade || 1;
+    try {
+      const nota = pedido.nota_fiscal ? JSON.parse(pedido.nota_fiscal) : {};
+      if (nota.varianteId) {
+        const variante = db.prepare('SELECT nome FROM variantes_produto WHERE id=?').get(nota.varianteId);
+        if (variante) varianteNome = variante.nome;
+      }
+    } catch {}
+
+    // Nome completo: produto + variante + quantidade
+    const nomeProduto = extras.nomeProduto || produto?.nome || pedido.produto_id.slice(0,8);
+    const nomeCompleto = [
+      nomeProduto,
+      varianteNome ? `— ${varianteNome}` : null,
+    ].filter(Boolean).join(' ');
+    const qtdLabel = qtd > 1 ? ` (x${qtd})` : '';
+
     // Determinar quem vendeu
     let vendidoPor = '🤖 Bot (automático)';
     if (extras.vendidoPorCustom) vendidoPor = extras.vendidoPorCustom;
@@ -55,14 +74,12 @@ async function logVenda(client, pedido, extras = {}) {
     const ts = pedido.pago_em || pedido.entregue_em || Math.floor(Date.now()/1000);
     const data = new Date(ts * 1000).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' });
 
-    const nomeProduto = extras.nomeProduto || produto?.nome || pedido.produto_id.slice(0,8);
-
     const embed = new EmbedBuilder()
       .setColor(pagoCoins ? 0xFFD700 : 0x00D26A)
       .setTitle('🛒 Nova Venda Realizada')
       .addFields(
         { name: '👤 Comprador',       value: `<@${pedido.usuario_id}> (${usuario?.nome || pedido.usuario_id})`, inline: false },
-        { name: '📦 Produto',         value: `**${nomeProduto}**`,                                              inline: true  },
+        { name: '📦 Produto',         value: `**${nomeCompleto}${qtdLabel}**`,                                  inline: true  },
         { name: '💵 Valor',           value: `**R$ ${Number(pedido.valor_total).toFixed(2)}**`,                 inline: true  },
         { name: '💳 Pagamento',       value: formatarMetodo(metodo),                                            inline: true  },
         { name: '🆔 Pedido',          value: `\`${pedido.id.slice(0,8).toUpperCase()}\``,                       inline: true  },
@@ -73,7 +90,7 @@ async function logVenda(client, pedido, extras = {}) {
         { name: '🤝 Afiliado',        value: afiliado ? `${afiliado.nome || afiliado.discord_id}` : '—',       inline: true  },
       )
       .setTimestamp(ts * 1000)
-      .setFooter({ text: `Máximo Store • ${nomeProduto}` });
+      .setFooter({ text: `Máximo Store • ${nomeCompleto}` });
 
     await canal.send({ embeds: [embed] });
   } catch (err) {
