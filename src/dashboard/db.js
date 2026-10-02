@@ -34,6 +34,19 @@ function initDashDB() {
       PRIMARY KEY (cargo, aba)
     );
 
+    CREATE TABLE IF NOT EXISTS dash_paineis_cliente (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      titulo      TEXT NOT NULL,
+      descricao   TEXT,
+      icone       TEXT DEFAULT '📥',
+      cor         TEXT DEFAULT '7c3aed',
+      links       TEXT NOT NULL DEFAULT '[]',
+      ordem       INTEGER DEFAULT 0,
+      ativo       INTEGER DEFAULT 1,
+      criado_por  TEXT,
+      criado_em   INTEGER DEFAULT (strftime('%s','now'))
+    );
+
     CREATE TABLE IF NOT EXISTS dash_solicitacoes (
       id          INTEGER PRIMARY KEY AUTOINCREMENT,
       usuario_id  INTEGER NOT NULL,
@@ -51,11 +64,11 @@ function initDashDB() {
   `);
 
   // Permissões padrão por cargo (dono pode mudar)
-  const ABAS = ['overview','loja','perfil','solicitar','solicitacoes','usuarios','produtos','pedidos','tickets','cupons','gerenciar','config_mr'];
+  const ABAS = ['overview','loja','perfil','solicitar','solicitacoes','usuarios','produtos','pedidos','tickets','cupons','gerenciar','config_mr','clientes'];
   const DEFAULTS = {
-    cliente:    ['loja','perfil'],
-    staff:      ['loja','perfil','solicitar','usuarios'],
-    resp_staff: ['loja','perfil','solicitar','solicitacoes','usuarios'],
+    cliente:    ['loja','perfil','clientes'],
+    staff:      ['loja','perfil','solicitar','usuarios','clientes'],
+    resp_staff: ['loja','perfil','solicitar','solicitacoes','usuarios','clientes'],
     sub_dono:   ABAS,
     dono:       ABAS,
   };
@@ -67,9 +80,17 @@ function initDashDB() {
     }
   }
 
-  // Garantir que config_mr está habilitado para sub_dono e dono (mesmo em bancos existentes)
+  // Garantir que config_mr e clientes estão habilitados para cargos corretos (mesmo em bancos existentes)
   for (const cargo of ['sub_dono', 'dono']) {
     db.prepare('INSERT OR REPLACE INTO dash_permissoes_cargo (cargo, aba, permitido) VALUES (?,?,1)').run(cargo, 'config_mr');
+    db.prepare('INSERT OR REPLACE INTO dash_permissoes_cargo (cargo, aba, permitido) VALUES (?,?,1)').run(cargo, 'clientes');
+  }
+  for (const cargo of ['resp_staff']) {
+    db.prepare('INSERT OR REPLACE INTO dash_permissoes_cargo (cargo, aba, permitido) VALUES (?,?,1)').run(cargo, 'clientes');
+  }
+  // Todos têm acesso à área de clientes (visualização)
+  for (const cargo of ['cliente', 'staff', 'resp_staff', 'sub_dono', 'dono']) {
+    db.prepare('INSERT OR IGNORE INTO dash_permissoes_cargo (cargo, aba, permitido) VALUES (?,?,1)').run(cargo, 'clientes');
   }
 
   // Criar conta dono padrão se não existir

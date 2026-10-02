@@ -1648,7 +1648,8 @@ router.post('/perfil/senha', auth.requireAuth, express.urlencoded({extended:fals
 
 // ─── CONFIG MR ───────────────────────────────────────────────
 router.use('/config-mr', require('./configMr'));
-// Garantir acesso sem barra final
-router.get('/config_mr', (req, res) => res.redirect('/painel/config-mr'));
+
+// ─── CLIENTES ────────────────────────────────────────────────
+router.use('/clientes', require('./clientes'));
 
 module.exports = router;
