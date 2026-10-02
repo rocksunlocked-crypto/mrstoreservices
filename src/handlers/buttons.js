@@ -429,6 +429,61 @@ module.exports = async (interaction, client) => {
     }
   }
 
+  // ── Menu Usuário (compra) — mostra opções: coins, cupom, vendedor ────────────
+  if (id.startsWith('tmenu_compra_usuario_')) {
+    const pedidoId = id.replace('tmenu_compra_usuario_', '');
+    const pedido   = Pedidos.get(pedidoId);
+    if (!pedido) return interaction.reply({ content: '❌ Pedido não encontrado.', ephemeral: true });
+    if (pedido.usuario_id !== interaction.user.id)
+      return interaction.reply({ content: '❌ Apenas o comprador pode usar este menu.', ephemeral: true });
+
+    const coins      = db.prepare('SELECT coins FROM usuarios WHERE discord_id=?').get(interaction.user.id)?.coins || 0;
+    const valorCoins = coins * 0.01;
+    const podeCoins  = valorCoins >= Number(pedido.valor_total);
+
+    const { EmbedBuilder: EB, ActionRowBuilder: AR, ButtonBuilder: BB, ButtonStyle: BS } = require('discord.js');
+    const row = new AR().addComponents(
+      new BB().setCustomId(`pagar_coins_${pedidoId}`).setLabel('Pagar com Coins').setEmoji('🪙').setStyle(BS.Success).setDisabled(!podeCoins),
+      new BB().setCustomId(`aplicar_cupom_${pedidoId}`).setLabel('Cupom').setEmoji('🎟️').setStyle(BS.Secondary),
+      new BB().setCustomId(`informar_vendedor_${pedidoId}`).setLabel('Código do Vendedor').setEmoji('🤝').setStyle(BS.Secondary),
+    );
+    return interaction.reply({
+      embeds: [new EB().setColor(0x5865F2)
+        .setTitle('👤 Menu do Usuário')
+        .addFields(
+          { name: '🪙 Seus Coins', value: `${coins.toLocaleString('pt-BR')} (≈ R$ ${valorCoins.toFixed(2)})`, inline: true },
+          { name: '💰 Valor do Pedido', value: `R$ ${Number(pedido.valor_total).toFixed(2)}`, inline: true },
+        )
+        .setDescription(podeCoins ? '✅ Você tem coins suficientes para pagar!' : '❌ Coins insuficientes para cobrir o valor total.')
+        .setTimestamp()],
+      components: [row],
+      ephemeral: true,
+    });
+  }
+
+  // ── Menu Admin (compra) — assumir, liberar, fechar + extras ──────────────────
+  if (id.startsWith('tmenu_compra_admin_')) {
+    const pedidoId = id.replace('tmenu_compra_admin_', '');
+    if (!podeVerTickets(interaction.member))
+      return interaction.reply({ content: '❌ Apenas staff pode usar o Menu Admin.', ephemeral: true });
+
+    const { EmbedBuilder: EB, ActionRowBuilder: AR, ButtonBuilder: BB, ButtonStyle: BS } = require('discord.js');
+    const row = new AR().addComponents(
+      new BB().setCustomId('ticket_assumir').setLabel('Assumir').setEmoji('✋').setStyle(BS.Primary),
+      new BB().setCustomId(`ticket_aceitar_sem_pag_${pedidoId}`).setLabel('Liberar').setEmoji('✅').setStyle(BS.Success),
+      new BB().setCustomId('ticket_fechar').setLabel('Fechar').setEmoji('🔒').setStyle(BS.Secondary),
+      new BB().setCustomId(`tgerar_pix_${pedidoId}`).setLabel('Gerar PIX').setEmoji('💸').setStyle(BS.Secondary),
+    );
+    return interaction.reply({
+      embeds: [new EB().setColor(0xF59E0B)
+        .setTitle('⚙️ Menu Admin')
+        .setDescription('Escolha uma ação para gerenciar este pedido.')
+        .setTimestamp()],
+      components: [row],
+      ephemeral: true,
+    });
+  }
+
   // ── Informar código de vendedor/afiliado no pedido ───────────────────────────
   if (id.startsWith('informar_vendedor_')) {
     const pedidoId = id.replace('informar_vendedor_', '');

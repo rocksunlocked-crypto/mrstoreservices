@@ -123,11 +123,10 @@ async function abrirTicket(guild, member, tipo = 'compra', dadosExtra = {}) {
     }
 
     const rowPag = new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId(`escolher_moeda_${dadosExtra.pedidoId}`).setLabel('💳 Escolher Pagamento').setStyle(ButtonStyle.Primary),
-      new ButtonBuilder().setCustomId(`pagar_coins_${dadosExtra.pedidoId}`).setLabel('🪙 Pagar com Coins').setStyle(ButtonStyle.Secondary).setDisabled(!podeCoins),
-      new ButtonBuilder().setCustomId(`aplicar_cupom_${dadosExtra.pedidoId}`).setLabel('🎟️ Cupom').setStyle(ButtonStyle.Secondary),
-      new ButtonBuilder().setCustomId(`informar_vendedor_${dadosExtra.pedidoId}`).setLabel('🤝 Código do Vendedor').setStyle(ButtonStyle.Secondary),
-      new ButtonBuilder().setCustomId(`cancelar_pedido_${dadosExtra.pedidoId}`).setLabel('❌ Cancelar').setStyle(ButtonStyle.Danger),
+      new ButtonBuilder().setCustomId(`escolher_moeda_${dadosExtra.pedidoId}`).setLabel('Gerar Pagamento').setEmoji('💳').setStyle(ButtonStyle.Primary),
+      new ButtonBuilder().setCustomId(`tmenu_compra_usuario_${dadosExtra.pedidoId}`).setLabel('Menu Usuário').setEmoji('👤').setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId(`tmenu_compra_admin_${dadosExtra.pedidoId}`).setLabel('Menu Admin').setEmoji('⚙️').setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId(`cancelar_pedido_${dadosExtra.pedidoId}`).setLabel('Cancelar').setEmoji('❌').setStyle(ButtonStyle.Danger),
     );
     const rowStaff = new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId('ticket_assumir').setLabel('✋ Assumir').setStyle(ButtonStyle.Secondary),

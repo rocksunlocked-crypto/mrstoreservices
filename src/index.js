@@ -445,7 +445,7 @@ client.on('interactionCreate', async (interaction) => {
       // ticket_assumir / ticket_fechar / ticket_transcript / ticket_aceitar_sem_pag_ / ticket_pagar_ / ticket_banir_fraude
       // são tratados pelo buttons.js (sistema de compras), não pelo ticketInteractionHandler
       const LOJA_TICKET_IDS = ['ticket_assumir', 'ticket_fechar', 'ticket_transcript', 'ticket_banir_fraude'];
-      const LOJA_TICKET_PREFIXES = ['ticket_aceitar_sem_pag_', 'ticket_pagar_'];
+      const LOJA_TICKET_PREFIXES = ['ticket_aceitar_sem_pag_', 'ticket_pagar_', 'tmenu_compra_'];
       const ehLoja = LOJA_TICKET_IDS.includes(id) || LOJA_TICKET_PREFIXES.some(p => id.startsWith(p));
 
       if (

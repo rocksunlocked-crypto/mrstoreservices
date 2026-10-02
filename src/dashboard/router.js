@@ -1190,11 +1190,17 @@ router.get('/produtos', auth.middlewareAba('produtos'), (req, res) => {
   const where  = search ? `WHERE p.nome LIKE '%${search.replace(/'/g,"''")}%'` : '';
   const total  = db.prepare(`SELECT COUNT(*) as c FROM produtos p ${where}`).get()?.c || 0;
   const rows   = db.prepare(`SELECT p.*, COUNT(v.id) as variantes FROM produtos p LEFT JOIN variantes_produto v ON v.produto_id=p.id AND v.ativo=1 ${where} GROUP BY p.id ORDER BY p.criado_em DESC LIMIT ${limit} OFFSET ${offset}`).all();
+  const podeDeletar = ['sub_dono','dono'].includes(user.cargo);
 
   const body = `
     <div class="search-row"><form method="GET"><input class="form-control" name="q" value="${search}" placeholder="Buscar..."></form></div>
     <div class="table-card">
-      <div class="table-head"><span class="table-title">📦 Produtos (${total})</span></div>
+      <div class="table-head">
+        <span class="table-title">📦 Produtos (${total})</span>
+        ${podeDeletar ? `<form method="POST" action="/painel/produtos/deletar-desativados" onsubmit="return confirm('Deletar TODOS os produtos desativados permanentemente?')">
+          <button class="btn btn-sm btn-danger" type="submit">🗑️ Deletar Desativados</button>
+        </form>` : ''}
+      </div>
       <table>
         <tr><th>Nome</th><th>Categoria</th><th>Preço</th><th>Variantes</th><th>Vendas</th><th>Status</th><th>Ações</th></tr>
         ${rows.map(p => `<tr>
@@ -1204,10 +1210,13 @@ router.get('/produtos', auth.middlewareAba('produtos'), (req, res) => {
           <td>${p.variantes}</td>
           <td>${p.vendas||0}</td>
           <td>${badge(p.ativo?'ativo':'inativo')}</td>
-          <td>
+          <td style="display:flex;gap:4px;flex-wrap:wrap">
             <form method="POST" action="/painel/produtos/${p.id}/toggle" style="display:inline">
               <button class="btn btn-sm ${p.ativo?'btn-danger':'btn-success'}" type="submit">${p.ativo?'Desativar':'Ativar'}</button>
             </form>
+            ${podeDeletar && !p.ativo ? `<form method="POST" action="/painel/produtos/${p.id}/deletar" style="display:inline" onsubmit="return confirm('Deletar permanentemente ${p.nome.replace(/'/g,"\\'")}?')">
+              <button class="btn btn-sm btn-danger" type="submit">🗑️</button>
+            </form>` : ''}
           </td>
         </tr>`).join('')||'<tr><td colspan="7" style="text-align:center;color:#7878a0;padding:24px">Nenhum</td></tr>'}
       </table>
@@ -1215,10 +1224,41 @@ router.get('/produtos', auth.middlewareAba('produtos'), (req, res) => {
     ${pagination(page,total,limit,`/painel/produtos?q=${search}`)}`;
   res.send(layout(user, '📦 Produtos', body, 'produtos'));
 });
+
 router.post('/produtos/:id/toggle', auth.middlewareAba('produtos'), (req, res) => {
   const { db } = getMainDb();
   const p = db.prepare('SELECT ativo FROM produtos WHERE id=?').get(req.params.id);
   if (p) db.prepare('UPDATE produtos SET ativo=? WHERE id=?').run(p.ativo?0:1, req.params.id);
+  res.redirect('/painel/produtos');
+});
+
+router.post('/produtos/:id/deletar', auth.middlewareAba('produtos'), (req, res) => {
+  const user = req.dashUser;
+  if (!['sub_dono','dono'].includes(user.cargo)) return res.status(403).send('Sem permissão');
+  const { db } = getMainDb();
+  const prod = db.prepare('SELECT * FROM produtos WHERE id=? AND ativo=0').get(req.params.id);
+  if (!prod) return res.redirect('/painel/produtos?msg=err');
+  // Deletar estoque, variantes e produto
+  db.prepare('DELETE FROM estoque_digital WHERE produto_id=?').run(prod.id);
+  db.prepare('DELETE FROM estoque_variante WHERE variante_id IN (SELECT id FROM variantes_produto WHERE produto_id=?)').run(prod.id);
+  db.prepare('DELETE FROM variantes_produto WHERE produto_id=?').run(prod.id);
+  db.prepare('DELETE FROM paineis_canal WHERE produto_id=?').run(prod.id);
+  db.prepare('DELETE FROM produtos WHERE id=?').run(prod.id);
+  res.redirect('/painel/produtos');
+});
+
+router.post('/produtos/deletar-desativados', auth.middlewareAba('produtos'), (req, res) => {
+  const user = req.dashUser;
+  if (!['sub_dono','dono'].includes(user.cargo)) return res.status(403).send('Sem permissão');
+  const { db } = getMainDb();
+  const desativados = db.prepare('SELECT id FROM produtos WHERE ativo=0').all();
+  for (const p of desativados) {
+    db.prepare('DELETE FROM estoque_digital WHERE produto_id=?').run(p.id);
+    db.prepare('DELETE FROM estoque_variante WHERE variante_id IN (SELECT id FROM variantes_produto WHERE produto_id=?)').run(p.id);
+    db.prepare('DELETE FROM variantes_produto WHERE produto_id=?').run(p.id);
+    db.prepare('DELETE FROM paineis_canal WHERE produto_id=?').run(p.id);
+    db.prepare('DELETE FROM produtos WHERE id=?').run(p.id);
+  }
   res.redirect('/painel/produtos');
 });
 
