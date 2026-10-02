@@ -21,7 +21,8 @@ router.get('/', auth.middlewareAba('clientes'), (req, res) => {
   const editor = podeEditar(user.cargo);
   const paineis = db.prepare('SELECT * FROM dash_paineis_cliente WHERE ativo=1 ORDER BY ordem ASC, criado_em DESC').all();
 
-  const cardsHtml = paineis.map(p => {
+  const cardsHtml = `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:20px">` +
+    paineis.map(p => {
     const links  = parseLinks(p);
     const cor    = p.cor || '7c3aed';
     const img    = p.imagem_url
@@ -63,7 +64,7 @@ router.get('/', auth.middlewareAba('clientes'), (req, res) => {
           ${links.length ? linksHtml : '<div style="color:#7070a0;font-size:13px;text-align:center;padding:12px">Nenhum link configurado.</div>'}
         </div>
       </div>`;
-  }).join('');
+  }).join('') + `</div>`;
 
   const body = `
     ${msg === 'ok'  ? alertHtml('success', '✅ Painel salvo!') : ''}

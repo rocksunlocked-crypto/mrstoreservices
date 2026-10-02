@@ -81,7 +81,7 @@ async function criarCheckout({ valorBrl, descricao, pedidoId, moeda = 'USD', met
   // Moedas sem centavos (zero-decimal no Stripe)
   const ZERO_DECIMAL = ['JPY', 'KRW', 'CLP', 'BIF', 'DJF', 'GNF', 'ISK', 'KMF', 'MGA', 'PYG', 'RWF', 'UGX', 'VND', 'VUV', 'XAF', 'XOF', 'XPF'];
   const valorUnidade = ZERO_DECIMAL.includes(moeda) ? Math.round(valorMoeda) : Math.round(valorMoeda * 100);
-  const base         = process.env.WEBHOOK_URL?.replace('/webhook', '') || 'https://bot-vendas-master-production.up.railway.app';
+  const base         = process.env.BOT_URL || process.env.WEBHOOK_URL?.replace('/webhook', '') || 'https://mrstoreservices.up.railway.app';
 
   const params = new URLSearchParams({
     'line_items[0][price_data][currency]':           moeda.toLowerCase(),
