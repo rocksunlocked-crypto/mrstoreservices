@@ -286,10 +286,11 @@ router.get('/loja', auth.middlewareAba('loja'), (req, res) => {
 
   function imgTag(url, nome) {
     if (!url) return '<div style="width:100%;height:150px;background:linear-gradient(135deg,#12122a,#1a1a35);display:flex;align-items:center;justify-content:center;font-size:48px">📦</div>';
-    // Proxy para qualquer URL do Discord CDN (expiram após algumas horas)
-    const isDiscord = url.includes('cdn.discordapp.com') || url.includes('media.discordapp.net');
-    const src = isDiscord ? `https://images.weserv.nl/?url=${encodeURIComponent(url)}&w=400&output=webp&maxage=7d` : url;
-    return `<img src="${src}" alt="${nome}" loading="lazy" style="width:100%;height:150px;object-fit:cover" onerror="this.parentElement.innerHTML='<div style=\\'width:100%;height:150px;background:linear-gradient(135deg,#12122a,#1a1a35);display:flex;align-items:center;justify-content:center;font-size:48px\\'>📦</div>'">`;
+    // Tenta URL direta primeiro. Se falhar, tenta proxy weserv. Se falhar de novo, mostra ícone.
+    const proxy = `https://images.weserv.nl/?url=${encodeURIComponent(url)}&w=400&output=webp&maxage=1d`;
+    const fallbackIcon = `<div style='width:100%;height:150px;background:linear-gradient(135deg,#12122a,#1a1a35);display:flex;align-items:center;justify-content:center;font-size:48px'>📦</div>`;
+    return `<img src="${url}" alt="${nome}" loading="lazy" style="width:100%;height:150px;object-fit:cover"
+      onerror="if(!this.dataset.tried){this.dataset.tried=1;this.src='${proxy.replace(/'/g,"\\'")}'}else{this.parentElement.innerHTML='${fallbackIcon.replace(/'/g,"\\'")}'}">`;
   }
 
   const catTabs = ['', ...categorias].map(c =>

@@ -265,8 +265,36 @@ client.once('ready', async () => {
             .run(nomeCat, painel.produto_id, nomeCat);
           syncOk++;
         }
-        console.log(`🏷️  Sync de categorias: ${syncOk}/${todosPaineis.length} produto(s) atualizados.`);
-      } catch (e) { console.error('[Sync Categorias]', e.message); }
+
+      // ── Sync automático de imagens — relê embed do Discord para URL atualizada ──
+      // URLs do Discord CDN expiram; buscando a mensagem o Discord devolve URL nova
+        let imgOk = 0;
+        for (const painel of todosPaineis) {
+          try {
+            if (!painel.canal_id || !painel.mensagem_id) continue;
+            const canal = guild.channels.cache.get(painel.canal_id)
+              || await client.channels.fetch(painel.canal_id).catch(() => null);
+            if (!canal) continue;
+            const msg = await canal.messages.fetch(painel.mensagem_id).catch(() => null);
+            if (!msg) continue;
+            const embed = msg.embeds?.[0];
+            if (!embed) continue;
+            // Pega imagem principal ou thumbnail do embed
+            const novaUrl = embed.image?.url || embed.thumbnail?.url || null;
+            if (!novaUrl) continue;
+            // Só atualiza se a URL mudou
+            const atual = db.prepare('SELECT imagem_url FROM produtos WHERE id=?').get(painel.produto_id);
+            if (atual && atual.imagem_url !== novaUrl) {
+              db.prepare("UPDATE produtos SET imagem_url=?, atualizado_em=strftime('%s','now') WHERE id=?")
+                .run(novaUrl, painel.produto_id);
+              db.prepare("UPDATE paineis_canal SET imagem_url=? WHERE id=?")
+                .run(novaUrl, painel.id);
+              imgOk++;
+            }
+          } catch {}
+        }
+        console.log(`🏷️  Sync de categorias: ${syncOk}/${todosPaineis.length} | 🖼️  Imagens: ${imgOk} atualizadas.`);
+      } catch (e) { console.error('[Sync Categorias/Imagens]', e.message); }
 
       const { inicializarTabela } = require('./systems/afiliados');
       inicializarTabela();
