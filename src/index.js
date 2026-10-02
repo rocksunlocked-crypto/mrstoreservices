@@ -248,6 +248,26 @@ client.once('ready', async () => {
         await new Promise(r => setTimeout(r, 300));
       }
 
+      // ── Sync automático de categorias Discord → banco ──────────────────
+      // Percorre todos os painéis e atualiza o campo categoria do produto
+      // com o nome da categoria-pai do canal no Discord
+      try {
+        const todosPaineis = db.prepare('SELECT * FROM paineis_canal WHERE produto_id IS NOT NULL').all();
+        let syncOk = 0;
+        for (const painel of todosPaineis) {
+          const canal = guild.channels.cache.get(painel.canal_id)
+            || await client.channels.fetch(painel.canal_id).catch(() => null);
+          if (!canal?.parent?.name) continue;
+          const nomeCat = canal.parent.name
+            .replace(/[^\w\s\-áàâãéèêíìîóòôõúùûçÁÀÂÃÉÈÊÍÌÎÓÒÔÕÚÙÛÇ]/g, '')
+            .trim() || 'Geral';
+          db.prepare("UPDATE produtos SET categoria=?, atualizado_em=strftime('%s','now') WHERE id=? AND (categoria IS NULL OR categoria='Geral' OR categoria!=?)")
+            .run(nomeCat, painel.produto_id, nomeCat);
+          syncOk++;
+        }
+        console.log(`🏷️  Sync de categorias: ${syncOk}/${todosPaineis.length} produto(s) atualizados.`);
+      } catch (e) { console.error('[Sync Categorias]', e.message); }
+
       const { inicializarTabela } = require('./systems/afiliados');
       inicializarTabela();
 
