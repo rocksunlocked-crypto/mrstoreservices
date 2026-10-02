@@ -1238,13 +1238,31 @@ router.post('/produtos/:id/deletar', auth.middlewareAba('produtos'), (req, res) 
   const { db } = getMainDb();
   const prod = db.prepare('SELECT * FROM produtos WHERE id=? AND ativo=0').get(req.params.id);
   if (!prod) return res.redirect('/painel/produtos?msg=err');
-  // Deletar estoque, variantes e produto
-  db.prepare('DELETE FROM estoque_digital WHERE produto_id=?').run(prod.id);
-  db.prepare('DELETE FROM estoque_variante WHERE variante_id IN (SELECT id FROM variantes_produto WHERE produto_id=?)').run(prod.id);
-  db.prepare('DELETE FROM variantes_produto WHERE produto_id=?').run(prod.id);
-  db.prepare('DELETE FROM paineis_canal WHERE produto_id=?').run(prod.id);
-  db.prepare('DELETE FROM produtos WHERE id=?').run(prod.id);
-  res.redirect('/painel/produtos');
+  try {
+    // Deletar dados dependentes antes, preservando pedidos (histórico)
+    db.prepare('DELETE FROM estoque_digital WHERE produto_id=?').run(prod.id);
+    db.prepare('DELETE FROM estoque_variante WHERE variante_id IN (SELECT id FROM variantes_produto WHERE produto_id=?)').run(prod.id);
+    db.prepare('DELETE FROM variantes_produto WHERE produto_id=?').run(prod.id);
+    db.prepare('DELETE FROM paineis_canal WHERE produto_id=?').run(prod.id);
+    db.prepare("DELETE FROM caixa_itens_config WHERE produto_id=?").run(prod.id);
+    // Remover favoritos se existir
+    try { db.prepare('DELETE FROM favoritos WHERE produto_id=?').run(prod.id); } catch {}
+    // Remover histórico de preços se existir
+    try { db.prepare('DELETE FROM historico_precos WHERE produto_id=?').run(prod.id); } catch {}
+    // Preços revendedor
+    try { db.prepare('DELETE FROM dash_precos_revendedor WHERE produto_id=?').run(prod.id); } catch {}
+    // Nullificar produto_id nos pedidos para preservar histórico financeiro
+    db.prepare('UPDATE pedidos SET produto_id=NULL WHERE produto_id=?').run(prod.id);
+    // Agora deletar o produto com FK desabilitada temporariamente
+    db.pragma('foreign_keys = OFF');
+    db.prepare('DELETE FROM produtos WHERE id=?').run(prod.id);
+    db.pragma('foreign_keys = ON');
+    res.redirect('/painel/produtos');
+  } catch (e) {
+    db.pragma('foreign_keys = ON');
+    console.error('[Deletar Produto]', e.message);
+    res.redirect('/painel/produtos?msg=err');
+  }
 });
 
 router.post('/produtos/deletar-desativados', auth.middlewareAba('produtos'), (req, res) => {
@@ -1252,14 +1270,27 @@ router.post('/produtos/deletar-desativados', auth.middlewareAba('produtos'), (re
   if (!['sub_dono','dono'].includes(user.cargo)) return res.status(403).send('Sem permissão');
   const { db } = getMainDb();
   const desativados = db.prepare('SELECT id FROM produtos WHERE ativo=0').all();
-  for (const p of desativados) {
-    db.prepare('DELETE FROM estoque_digital WHERE produto_id=?').run(p.id);
-    db.prepare('DELETE FROM estoque_variante WHERE variante_id IN (SELECT id FROM variantes_produto WHERE produto_id=?)').run(p.id);
-    db.prepare('DELETE FROM variantes_produto WHERE produto_id=?').run(p.id);
-    db.prepare('DELETE FROM paineis_canal WHERE produto_id=?').run(p.id);
-    db.prepare('DELETE FROM produtos WHERE id=?').run(p.id);
+  try {
+    db.pragma('foreign_keys = OFF');
+    for (const p of desativados) {
+      db.prepare('DELETE FROM estoque_digital WHERE produto_id=?').run(p.id);
+      db.prepare('DELETE FROM estoque_variante WHERE variante_id IN (SELECT id FROM variantes_produto WHERE produto_id=?)').run(p.id);
+      db.prepare('DELETE FROM variantes_produto WHERE produto_id=?').run(p.id);
+      db.prepare('DELETE FROM paineis_canal WHERE produto_id=?').run(p.id);
+      try { db.prepare('DELETE FROM caixa_itens_config WHERE produto_id=?').run(p.id); } catch {}
+      try { db.prepare('DELETE FROM favoritos WHERE produto_id=?').run(p.id); } catch {}
+      try { db.prepare('DELETE FROM historico_precos WHERE produto_id=?').run(p.id); } catch {}
+      try { db.prepare('DELETE FROM dash_precos_revendedor WHERE produto_id=?').run(p.id); } catch {}
+      db.prepare('UPDATE pedidos SET produto_id=NULL WHERE produto_id=?').run(p.id);
+      db.prepare('DELETE FROM produtos WHERE id=?').run(p.id);
+    }
+    db.pragma('foreign_keys = ON');
+    res.redirect('/painel/produtos');
+  } catch (e) {
+    db.pragma('foreign_keys = ON');
+    console.error('[Deletar Desativados]', e.message);
+    res.redirect('/painel/produtos?msg=err');
   }
-  res.redirect('/painel/produtos');
 });
 
 // ─── PEDIDOS ─────────────────────────────────────────────────
