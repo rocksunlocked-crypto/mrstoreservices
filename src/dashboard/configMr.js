@@ -335,7 +335,10 @@ router.get('/', mid, (req, res) => {
     content = `
       <div class="table-card">
         <div class="table-head"><span class="table-title">📦 Produtos (${rows.length})</span>
-          <a href="/painel/produtos" class="btn btn-sm btn-ghost">Gerenciar →</a>
+          <div style="display:flex;gap:8px">
+            <a href="/painel/revendedor/precos" class="btn btn-sm btn-ghost" style="border-color:#f9731640;color:#f97316">🏪 Preços Revendedor</a>
+            <a href="/painel/produtos" class="btn btn-sm btn-ghost">Gerenciar →</a>
+          </div>
         </div>
         <table>
           <tr><th>Nome</th><th>Cat.</th><th>Preço</th><th>Variantes</th><th>Estoque</th><th>Vendas</th><th>Status</th><th>Ações</th></tr>

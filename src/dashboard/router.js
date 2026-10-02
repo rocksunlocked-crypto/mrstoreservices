@@ -1921,9 +1921,10 @@ router.get('/revendedor', auth.middlewareAba('revendedor'), (req, res) => {
   ).join('');
 
   const viewTabs = `
-    <div style="display:flex;gap:8px;margin-bottom:20px">
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px;align-items:center">
       <a href="/painel/revendedor?cat=${encodeURIComponent(categorias[0]||'')}" class="btn btn-sm ${view!=='historico'?'btn-primary':'btn-ghost'}">🛍️ Loja</a>
       <a href="/painel/revendedor?view=historico" class="btn btn-sm ${view==='historico'?'btn-primary':'btn-ghost'}">📋 Meu Histórico</a>
+      ${['sub_dono','dono'].includes(user.cargo) ? `<a href="/painel/revendedor/precos" class="btn btn-sm btn-ghost" style="margin-left:auto;border-color:#f9731640;color:#f97316">🏷️ Editar Preços</a>` : ''}
     </div>`;
 
   const body = `
