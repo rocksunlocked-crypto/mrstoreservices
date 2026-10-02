@@ -62,16 +62,28 @@ function initDashDB() {
       criado_em   INTEGER DEFAULT (strftime('%s','now')),
       respondido_em INTEGER
     );
+
+    CREATE TABLE IF NOT EXISTS dash_precos_revendedor (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      produto_id  TEXT NOT NULL,
+      variante_id TEXT,
+      preco       REAL NOT NULL,
+      ativo       INTEGER DEFAULT 1,
+      criado_por  TEXT,
+      criado_em   INTEGER DEFAULT (strftime('%s','now')),
+      UNIQUE(produto_id, variante_id)
+    );
   `);
 
   // Permissões padrão por cargo (dono pode mudar)
-  const ABAS = ['overview','loja','perfil','solicitar','solicitacoes','usuarios','produtos','pedidos','tickets','cupons','gerenciar','config_mr','clientes'];
+  const ABAS = ['overview','loja','perfil','solicitar','solicitacoes','usuarios','produtos','pedidos','tickets','cupons','gerenciar','config_mr','clientes','meus_pedidos','revendedor'];
   const DEFAULTS = {
-    cliente:    ['loja','perfil','clientes'],
-    staff:      ['loja','perfil','solicitar','usuarios','clientes'],
-    resp_staff: ['loja','perfil','solicitar','solicitacoes','usuarios','clientes'],
-    sub_dono:   ABAS,
-    dono:       ABAS,
+    cliente:     ['loja','perfil','clientes','meus_pedidos'],
+    revendedor:  ['loja','perfil','clientes','meus_pedidos','revendedor'],
+    staff:       ['loja','perfil','solicitar','usuarios','clientes','meus_pedidos'],
+    resp_staff:  ['loja','perfil','solicitar','solicitacoes','usuarios','clientes','meus_pedidos'],
+    sub_dono:    ABAS,
+    dono:        ABAS,
   };
 
   const ins = db.prepare('INSERT OR IGNORE INTO dash_permissoes_cargo (cargo, aba, permitido) VALUES (?,?,?)');
@@ -84,17 +96,31 @@ function initDashDB() {
   // Migração segura — adicionar imagem_url se não existir
   try { db.exec('ALTER TABLE dash_paineis_cliente ADD COLUMN imagem_url TEXT'); } catch {}
 
-  // Garantir que config_mr e clientes estão habilitados para cargos corretos (mesmo em bancos existentes)
+  // Garantir novas abas em bancos existentes
   for (const cargo of ['sub_dono', 'dono']) {
-    db.prepare('INSERT OR REPLACE INTO dash_permissoes_cargo (cargo, aba, permitido) VALUES (?,?,1)').run(cargo, 'config_mr');
-    db.prepare('INSERT OR REPLACE INTO dash_permissoes_cargo (cargo, aba, permitido) VALUES (?,?,1)').run(cargo, 'clientes');
+    for (const aba of ['config_mr','clientes','meus_pedidos','revendedor','overview','loja','perfil','solicitar','solicitacoes','usuarios','produtos','pedidos','tickets','cupons','gerenciar']) {
+      db.prepare('INSERT OR REPLACE INTO dash_permissoes_cargo (cargo, aba, permitido) VALUES (?,?,1)').run(cargo, aba);
+    }
   }
   for (const cargo of ['resp_staff']) {
-    db.prepare('INSERT OR REPLACE INTO dash_permissoes_cargo (cargo, aba, permitido) VALUES (?,?,1)').run(cargo, 'clientes');
+    for (const aba of ['clientes','meus_pedidos','solicitar','solicitacoes','loja','perfil','usuarios']) {
+      db.prepare('INSERT OR REPLACE INTO dash_permissoes_cargo (cargo, aba, permitido) VALUES (?,?,1)').run(cargo, aba);
+    }
   }
-  // Todos têm acesso à área de clientes (visualização)
-  for (const cargo of ['cliente', 'staff', 'resp_staff', 'sub_dono', 'dono']) {
-    db.prepare('INSERT OR IGNORE INTO dash_permissoes_cargo (cargo, aba, permitido) VALUES (?,?,1)').run(cargo, 'clientes');
+  for (const cargo of ['staff']) {
+    for (const aba of ['clientes','meus_pedidos','loja','perfil','solicitar','usuarios']) {
+      db.prepare('INSERT OR REPLACE INTO dash_permissoes_cargo (cargo, aba, permitido) VALUES (?,?,1)').run(cargo, aba);
+    }
+  }
+  for (const cargo of ['revendedor']) {
+    for (const aba of ['loja','perfil','clientes','meus_pedidos','revendedor']) {
+      db.prepare('INSERT OR REPLACE INTO dash_permissoes_cargo (cargo, aba, permitido) VALUES (?,?,1)').run(cargo, aba);
+    }
+  }
+  for (const cargo of ['cliente']) {
+    for (const aba of ['loja','perfil','clientes','meus_pedidos']) {
+      db.prepare('INSERT OR REPLACE INTO dash_permissoes_cargo (cargo, aba, permitido) VALUES (?,?,1)').run(cargo, aba);
+    }
   }
 
   // Criar conta dono padrão se não existir
@@ -123,7 +149,7 @@ function mudarCargo(id, cargo)        { db.prepare('UPDATE dash_usuarios SET car
 function atualizarAcesso(id)          { db.prepare("UPDATE dash_usuarios SET ultimo_acesso=strftime('%s','now') WHERE id=?").run(id); }
 
 // ── IP lock — só para cargos staff+ ──────────────────────────
-const CARGOS_COM_IP_LOCK = ['staff','resp_staff','sub_dono','dono'];
+const CARGOS_COM_IP_LOCK = ['staff','revendedor','resp_staff','sub_dono','dono'];
 function precisaIpLock(cargo) { return CARGOS_COM_IP_LOCK.includes(cargo); }
 
 function getIpBloqueado(id) {
@@ -174,6 +200,29 @@ function responderSolicitacao(id, status, respondidoPor, motivo = null) {
     .run(status, respondidoPor, motivo, id);
 }
 
+// ── Preços revendedor ──────────────────────────────────────────
+function getPrecoRevendedor(produtoId, varianteId) {
+  return db.prepare('SELECT preco FROM dash_precos_revendedor WHERE produto_id=? AND (variante_id=? OR (variante_id IS NULL AND ? IS NULL)) AND ativo=1 LIMIT 1')
+    .get(produtoId, varianteId || null, varianteId || null);
+}
+function listarPrecosRevendedor() {
+  const { db: mainDb } = require('../database/database');
+  return mainDb.prepare(`
+    SELECT r.*, p.nome as produto_nome, v.nome as variante_nome, p.preco as preco_normal
+    FROM dash_precos_revendedor r
+    LEFT JOIN produtos p ON p.id = r.produto_id
+    LEFT JOIN variantes_produto v ON v.id = r.variante_id
+    ORDER BY p.nome, v.nome
+  `).all();
+}
+function salvarPrecoRevendedor(produtoId, varianteId, preco, criadoPor) {
+  db.prepare('INSERT OR REPLACE INTO dash_precos_revendedor (produto_id, variante_id, preco, ativo, criado_por) VALUES (?,?,?,1,?)')
+    .run(produtoId, varianteId || null, preco, criadoPor);
+}
+function removerPrecoRevendedor(id) {
+  db.prepare('DELETE FROM dash_precos_revendedor WHERE id=?').run(id);
+}
+
 module.exports = {
   initDashDB,
   getUsuario, getUsuarioByUsername, getUsuarioByDiscord,
@@ -182,4 +231,5 @@ module.exports = {
   getPermissoes, setPermissao, podeVer,
   criarSolicitacao, listarSolicitacoes, responderSolicitacao,
   precisaIpLock, getIpBloqueado, definirIpBloqueado, resetarIp, getIp,
+  getPrecoRevendedor, listarPrecosRevendedor, salvarPrecoRevendedor, removerPrecoRevendedor,
 };

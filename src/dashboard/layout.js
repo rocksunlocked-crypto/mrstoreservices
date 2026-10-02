@@ -4,6 +4,7 @@
 
 const CARGO_LABELS = {
   cliente:    { label: 'Cliente',     color: '#60a5fa', icon: '👤' },
+  revendedor: { label: 'Revendedor',  color: '#f97316', icon: '🏪' },
   staff:      { label: 'Staff',       color: '#34d399', icon: '🛡️' },
   resp_staff: { label: 'Resp. Staff', color: '#a78bfa', icon: '⭐' },
   sub_dono:   { label: 'Sub-Dono',    color: '#f59e0b', icon: '👑' },
@@ -14,6 +15,8 @@ const ABAS_INFO = {
   overview:     { icon: '📊', label: 'Visão Geral'    },
   loja:         { icon: '🛍️', label: 'Loja'           },
   perfil:       { icon: '👤', label: 'Perfil'          },
+  meus_pedidos: { icon: '📦', label: 'Meus Pedidos'    },
+  revendedor:   { icon: '🏪', label: 'Revendedor'      },
   solicitar:    { icon: '📋', label: 'Solicitar Item'  },
   solicitacoes: { icon: '📥', label: 'Solicitações'   },
   usuarios:     { icon: '👥', label: 'Usuários'       },
@@ -23,7 +26,7 @@ const ABAS_INFO = {
   cupons:       { icon: '🎟️', label: 'Cupons'          },
   gerenciar:    { icon: '⚙️', label: 'Gerenciar'       },
   config_mr:    { icon: '🔧', label: 'Config. Mr'      },
-  clientes:     { icon: '📥', label: 'Clientes'         },
+  clientes:     { icon: '📥', label: 'Clientes'        },
 };
 
 // CSS é uma string JS válida — todo o conteúdo dentro de backticks

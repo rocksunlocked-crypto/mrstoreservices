@@ -10,7 +10,7 @@ const { layout, loginLayout, badge, fmtDate, fmtMoeda, pagination, CARGO_LABELS,
 
 // ─── Helpers ────────────────────────────────────────────────
 const GUILD_INVITE = process.env.DISCORD_INVITE || 'https://discord.com/invite';
-const CARGOS       = ['cliente','staff','resp_staff','sub_dono','dono'];
+const CARGOS       = ['cliente','revendedor','staff','resp_staff','sub_dono','dono'];
 
 function getMainDb() { return require('../database/database'); }
 function alert(type, msg) { return `<div class="alert alert-${type}">${msg}</div>`; }
@@ -274,6 +274,9 @@ router.get('/loja', auth.middlewareAba('loja'), (req, res) => {
 
   // Query com filtro de categoria e busca
   let whereParts = ['p.ativo=1'];
+  // Admin+ podem ver produtos desativados com visual de fechado
+  const isAdmin = ['sub_dono','dono'].includes(user.cargo);
+  if (isAdmin) whereParts = ['1=1']; // mostra todos, ativos e inativos
   if (search)    whereParts.push(`p.nome LIKE '%${search.replace(/'/g,"''")}%'`);
   if (catFiltro) whereParts.push(`p.categoria='${catFiltro.replace(/'/g,"''")}'`);
   const where = 'WHERE ' + whereParts.join(' AND ');
@@ -311,6 +314,26 @@ router.get('/loja', auth.middlewareAba('loja'), (req, res) => {
     const cards = catProds.map(p => {
       const variantes = db.prepare('SELECT * FROM variantes_produto WHERE produto_id=? AND ativo=1 ORDER BY ordem ASC').all(p.id);
       const precoMin  = variantes.length ? Math.min(...variantes.map(v => v.preco)) : p.preco;
+      const fechado   = !p.ativo;
+      const toggleBtn = isAdmin ? `
+        <form method="POST" action="/painel/produtos/${p.id}/toggle" style="margin-top:6px">
+          <button class="btn btn-sm ${fechado?'btn-success':'btn-danger'}" type="submit" onclick="event.stopPropagation();return confirm('${fechado?'Reativar':'Desativar'} produto?')" style="width:100%;font-size:11px">
+            ${fechado ? '🟢 Reativar' : '🔴 Desligar'}
+          </button>
+        </form>` : '';
+      if (fechado) {
+        return `<div class="produto-card" style="border-color:#ff445540;opacity:0.7;cursor:default;position:relative">
+          <div style="position:absolute;top:10px;right:10px;background:#ff4455;color:#fff;font-size:11px;font-weight:700;padding:3px 10px;border-radius:20px;z-index:2">🔴 FECHADO</div>
+          <div class="produto-img" style="filter:grayscale(0.6)">${imgTag(p.imagem_url, p.nome)}</div>
+          <div class="produto-body">
+            <div class="produto-nome" style="color:#7070a0">${p.nome}</div>
+            <div class="produto-preco" style="color:#ff4455">${fmtMoeda(precoMin)}</div>
+            <div class="produto-desc">${p.descricao || ''}</div>
+            <button class="btn btn-danger" style="width:100%;font-size:12px;cursor:not-allowed;opacity:0.5" disabled>🚫 Indisponível</button>
+            ${toggleBtn}
+          </div>
+        </div>`;
+      }
       return `<div class="produto-card" onclick="window.location='/painel/loja/comprar/${p.id}'">
         <div class="produto-img">${imgTag(p.imagem_url, p.nome)}</div>
         <div class="produto-body">
@@ -318,6 +341,7 @@ router.get('/loja', auth.middlewareAba('loja'), (req, res) => {
           <div class="produto-preco">${fmtMoeda(precoMin)}${variantes.length > 1 ? '<span style="font-size:11px;color:#7070a0"> em diante</span>' : ''}</div>
           <div class="produto-desc">${p.descricao || ''}</div>
           <a href="/painel/loja/comprar/${p.id}" class="btn btn-primary" style="width:100%;font-size:12px" onclick="event.stopPropagation()">🛒 Comprar</a>
+          ${toggleBtn}
         </div>
       </div>`;
     }).join('');
@@ -357,11 +381,23 @@ router.get('/loja/comprar/:produtoId', auth.middlewareAba('loja'), (req, res) =>
   const prod   = db.prepare('SELECT * FROM produtos WHERE id=? AND ativo=1').get(req.params.produtoId);
   if (!prod) return res.redirect('/painel/loja');
 
+  const dashDb   = require('./db');
+  const isRevend = user.cargo === 'revendedor';
+
   const variantes = db.prepare('SELECT * FROM variantes_produto WHERE produto_id=? AND ativo=1 ORDER BY ordem ASC').all(prod.id);
   const varOptions = variantes.map(v => {
-    const disp = db.prepare('SELECT COUNT(*) as c FROM estoque_variante WHERE variante_id=? AND usado=0').get(v.id)?.c || 0;
-    return `<option value="${v.id}" ${disp===0?'disabled':''}>${v.nome} — ${fmtMoeda(v.preco)} ${disp===0?'(sem estoque)':'('+disp+' disp.)'}</option>`;
+    const disp   = db.prepare('SELECT COUNT(*) as c FROM estoque_variante WHERE variante_id=? AND usado=0').get(v.id)?.c || 0;
+    const precoR = isRevend ? dashDb.getPrecoRevendedor(prod.id, v.id) : null;
+    const precoEx = precoR ? ` [Rev: ${fmtMoeda(precoR.preco)}]` : '';
+    return `<option value="${v.id}" ${disp===0?'disabled':''}>${v.nome} — ${fmtMoeda(v.preco)}${precoEx} ${disp===0?'(sem estoque)':'('+disp+' disp.)'}</option>`;
   }).join('');
+
+  // Badge preço revendedor (sem variante)
+  let badgeRevend = '';
+  if (isRevend && variantes.length === 0) {
+    const precoR = dashDb.getPrecoRevendedor(prod.id, null);
+    if (precoR) badgeRevend = `<div style="display:inline-flex;align-items:center;gap:8px;background:#f9731618;border:1px solid #f9731640;border-radius:8px;padding:8px 14px;margin-bottom:16px;font-size:13px"><span style="color:#f97316;font-weight:700">🏪 Preço Revendedor: ${fmtMoeda(precoR.preco)}</span> <span style="color:#7070a0;text-decoration:line-through">${fmtMoeda(prod.preco)}</span></div>`;
+  }
 
   // Stripe disponível?
   const stripeOk = !!process.env.STRIPE_SECRET_KEY;
@@ -392,6 +428,7 @@ router.get('/loja/comprar/:produtoId', auth.middlewareAba('loja'), (req, res) =>
       <div>
         <h2 style="font-size:24px;font-weight:900;margin-bottom:8px;background:linear-gradient(135deg,#fff,#c4b5fd);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text">${prod.nome}</h2>
         <p style="color:#7070a0;margin-bottom:20px;line-height:1.6">${prod.descricao || ''}</p>
+        ${badgeRevend}
 
         <!-- Formulário PIX (padrão) -->
         <form method="POST" action="/painel/loja/finalizar" id="form-pix">
@@ -502,8 +539,15 @@ router.post('/loja/finalizar', auth.middlewareAba('loja'), express.urlencoded({ 
     const variante = variante_id ? db.prepare('SELECT * FROM variantes_produto WHERE id=?').get(variante_id) : null;
     const produto  = db.prepare('SELECT * FROM produtos WHERE id=?').get(produto_id);
     if (!produto) return res.redirect('/painel/loja');
+    if (!produto.ativo) return res.redirect('/painel/loja?msg=pixerr');
 
     let valor    = variante?.preco || produto.preco;
+    // Aplicar preço revendedor se o usuário for revendedor
+    if (user.cargo === 'revendedor') {
+      const dashDb = require('./db');
+      const precoR = dashDb.getPrecoRevendedor(produto_id, variante_id || null);
+      if (precoR) valor = precoR.preco;
+    }
     let desconto = 0;
     let cupomUsado = null;
     let cupomObj   = null;
@@ -1677,5 +1721,216 @@ router.use('/config-mr', require('./configMr'));
 
 // ─── CLIENTES ────────────────────────────────────────────────
 router.use('/clientes', require('./clientes'));
+
+// ─── MEUS PEDIDOS ────────────────────────────────────────────
+router.get('/meus-pedidos', auth.middlewareAba('meus_pedidos'), (req, res) => {
+  const { db } = getMainDb();
+  const user   = req.dashUser;
+  const page   = Math.max(1, parseInt(req.query.page) || 1);
+  const limit  = 20;
+  const offset = (page - 1) * limit;
+
+  const total   = db.prepare("SELECT COUNT(*) as c FROM pedidos WHERE usuario_id=? AND status='pago'").get(user.discord_id)?.c || 0;
+  const pedidos = db.prepare(`
+    SELECT p.*, pr.nome as produto_nome, pr.imagem_url as produto_img, pr.categoria
+    FROM pedidos p
+    LEFT JOIN produtos pr ON p.produto_id = pr.id
+    WHERE p.usuario_id=? AND p.status='pago'
+    ORDER BY p.pago_em DESC LIMIT ? OFFSET ?
+  `).all(user.discord_id, limit, offset);
+
+  const rows = pedidos.map(p => `
+    <tr>
+      <td><code style="font-size:11px">${p.id.slice(0,8).toUpperCase()}</code></td>
+      <td>${p.produto_nome || '—'} ${p.categoria ? `<span class="badge badge-purple" style="font-size:10px">${p.categoria}</span>` : ''}</td>
+      <td style="color:#86efac;font-weight:700">${fmtMoeda(p.valor_total)}</td>
+      <td>${fmtDate(p.pago_em)}</td>
+      <td>
+        ${p.conteudo_entregue
+          ? `<details><summary class="btn btn-sm btn-ghost" style="cursor:pointer">📦 Ver conteúdo</summary>
+              <div style="margin-top:8px;padding:10px;background:#0a0a1e;border-radius:8px;font-size:12px;white-space:pre-wrap;word-break:break-all;max-width:300px">${p.conteudo_entregue}</div>
+             </details>`
+          : '<span style="color:#7070a0;font-size:12px">—</span>'}
+      </td>
+    </tr>`).join('');
+
+  const body = `
+    <div class="table-card">
+      <div class="table-head">
+        <span class="table-title">📦 Meus Pedidos <span class="badge badge-blue">${total}</span></span>
+      </div>
+      ${total === 0 ? `
+        <div style="text-align:center;padding:64px;color:#7070a0">
+          <div style="font-size:48px;margin-bottom:16px">🛒</div>
+          <div style="font-size:18px;font-weight:700;margin-bottom:8px">Nenhuma compra ainda</div>
+          <div style="font-size:13px">Acesse a <a href="/painel/loja" style="color:#a855f7">Loja</a> para comprar.</div>
+        </div>` : `
+      <table>
+        <tr><th>Pedido</th><th>Produto</th><th>Valor</th><th>Data</th><th>Conteúdo</th></tr>
+        ${rows}
+      </table>
+      ${pagination(page, total, limit, '/painel/meus-pedidos')}`}
+    </div>`;
+
+  res.send(layout(user, '📦 Meus Pedidos', body, 'meus_pedidos'));
+});
+
+// ─── REVENDEDOR ───────────────────────────────────────────────
+router.get('/revendedor', auth.middlewareAba('revendedor'), (req, res) => {
+  const { db } = getMainDb();
+  const user   = req.dashUser;
+  const dashDb = require('./db');
+
+  // Histórico de compras do revendedor
+  const pedidos = db.prepare(`
+    SELECT p.*, pr.nome as produto_nome, pr.preco as preco_normal, v.nome as variante_nome
+    FROM pedidos p
+    LEFT JOIN produtos pr ON p.produto_id = pr.id
+    LEFT JOIN variantes_produto v ON v.id = CAST(JSON_EXTRACT(p.nota_fiscal, '$.varianteId') AS TEXT)
+    WHERE p.usuario_id=? AND p.status='pago'
+    ORDER BY p.pago_em DESC
+  `).all(user.discord_id);
+
+  let totalPago = 0, totalEconomy = 0;
+  const rows = pedidos.map(p => {
+    const precoNormal = p.preco_normal || p.valor_total;
+    const economia    = Math.max(0, (precoNormal * (p.quantidade || 1)) - p.valor_total);
+    totalPago      += p.valor_total;
+    totalEconomy   += economia;
+    return `
+      <tr>
+        <td><code style="font-size:11px">${p.id.slice(0,8).toUpperCase()}</code></td>
+        <td>${p.produto_nome || '—'}${p.variante_nome ? ` <span style="color:#7070a0;font-size:11px">/ ${p.variante_nome}</span>` : ''}</td>
+        <td>${p.quantidade || 1}</td>
+        <td style="color:#86efac;font-weight:700">${fmtMoeda(p.valor_total)}</td>
+        <td style="color:#7070a0">${fmtMoeda(precoNormal * (p.quantidade || 1))}</td>
+        <td style="color:#00ff88;font-weight:700">${fmtMoeda(economia)}</td>
+        <td>${fmtDate(p.pago_em)}</td>
+      </tr>`;
+  }).join('');
+
+  const body = `
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:14px;margin-bottom:28px">
+      <div class="stat-card" style="--glow-a:#f97316;--glow-b:#f59e0b">
+        <div class="stat-label">Total Gasto</div>
+        <div class="stat-value" style="color:#f97316">${fmtMoeda(totalPago)}</div>
+      </div>
+      <div class="stat-card" style="--glow-a:#00ff88;--glow-b:#34d399">
+        <div class="stat-label">Total Economizado</div>
+        <div class="stat-value" style="color:#00ff88">${fmtMoeda(totalEconomy)}</div>
+      </div>
+      <div class="stat-card" style="--glow-a:#7c3aed;--glow-b:#a855f7">
+        <div class="stat-label">Compras Realizadas</div>
+        <div class="stat-value">${pedidos.length}</div>
+      </div>
+    </div>
+    <div class="table-card">
+      <div class="table-head"><span class="table-title">🏪 Histórico de Compras — Revendedor</span></div>
+      ${pedidos.length === 0 ? `
+        <div style="text-align:center;padding:48px;color:#7070a0">Nenhuma compra realizada ainda.</div>` : `
+      <table>
+        <tr><th>Pedido</th><th>Produto</th><th>Qtd</th><th>Pago</th><th>Preço Normal</th><th>Economia</th><th>Data</th></tr>
+        ${rows}
+      </table>`}
+    </div>`;
+
+  res.send(layout(user, '🏪 Área do Revendedor', body, 'revendedor'));
+});
+
+// ─── PREÇOS REVENDEDOR (config — só dono/sub_dono) ────────────
+router.get('/revendedor/precos', auth.middlewareAba('config_mr'), (req, res) => {
+  const { db } = getMainDb();
+  const user   = req.dashUser;
+  const dashDb = require('./db');
+  const msg    = req.query.msg || '';
+
+  const produtos  = db.prepare('SELECT * FROM produtos WHERE ativo=1 ORDER BY categoria, nome').all();
+  const precos    = dashDb.listarPrecosRevendedor();
+
+  const precoMap = {};
+  precos.forEach(p => { precoMap[`${p.produto_id}__${p.variante_id||''}`] = p; });
+
+  const rows = produtos.map(p => {
+    const variantes = db.prepare('SELECT * FROM variantes_produto WHERE produto_id=? AND ativo=1 ORDER BY ordem').all(p.id);
+    if (variantes.length === 0) {
+      const key = `${p.id}__`;
+      const pr  = precoMap[key];
+      return `<tr>
+        <td>${p.nome} <span class="badge badge-purple" style="font-size:10px">${p.categoria||'Geral'}</span></td>
+        <td style="color:#7070a0">—</td>
+        <td style="color:#86efac">${fmtMoeda(p.preco)}</td>
+        <td>
+          <form method="POST" action="/painel/revendedor/precos/salvar" style="display:flex;gap:6px;align-items:center">
+            <input type="hidden" name="produto_id" value="${p.id}">
+            <input type="hidden" name="variante_id" value="">
+            <input class="form-control" type="number" name="preco" step="0.01" min="0.01" value="${pr?.preco||''}" placeholder="Preço rev." style="width:120px;padding:6px 10px">
+            <button class="btn btn-sm btn-primary" type="submit">💾</button>
+            ${pr ? `<form method="POST" action="/painel/revendedor/precos/${pr.id}/remover" style="display:inline"><button class="btn btn-sm btn-danger" type="submit" onclick="return confirm('Remover?')">🗑️</button></form>` : ''}
+          </form>
+        </td>
+      </tr>`;
+    }
+    return variantes.map(v => {
+      const key = `${p.id}__${v.id}`;
+      const pr  = precoMap[key];
+      return `<tr>
+        <td>${p.nome} <span class="badge badge-purple" style="font-size:10px">${p.categoria||'Geral'}</span></td>
+        <td style="color:#a78bfa">${v.nome}</td>
+        <td style="color:#86efac">${fmtMoeda(v.preco)}</td>
+        <td>
+          <form method="POST" action="/painel/revendedor/precos/salvar" style="display:flex;gap:6px;align-items:center">
+            <input type="hidden" name="produto_id" value="${p.id}">
+            <input type="hidden" name="variante_id" value="${v.id}">
+            <input class="form-control" type="number" name="preco" step="0.01" min="0.01" value="${pr?.preco||''}" placeholder="Preço rev." style="width:120px;padding:6px 10px">
+            <button class="btn btn-sm btn-primary" type="submit">💾</button>
+            ${pr ? `<form method="POST" action="/painel/revendedor/precos/${pr.id}/remover" style="display:inline"><button class="btn btn-sm btn-danger" type="submit" onclick="return confirm('Remover?')">🗑️</button></form>` : ''}
+          </form>
+        </td>
+      </tr>`;
+    }).join('');
+  }).join('');
+
+  const body = `
+    ${msg==='ok' ? `<div class="alert alert-success">✅ Preço salvo!</div>` : ''}
+    ${msg==='del' ? `<div class="alert alert-success">🗑️ Preço removido.</div>` : ''}
+    <div class="table-card">
+      <div class="table-head">
+        <span class="table-title">🏷️ Preços Revendedor</span>
+        <span style="font-size:12px;color:#7070a0">Defina preços especiais para revendedores. Deixe em branco para não ter preço diferenciado.</span>
+      </div>
+      <table>
+        <tr><th>Produto</th><th>Variante</th><th>Preço Normal</th><th>Preço Revendedor</th></tr>
+        ${rows}
+      </table>
+    </div>`;
+
+  res.send(layout(user, '🏷️ Preços Revendedor', body, 'config_mr'));
+});
+
+router.post('/revendedor/precos/salvar', auth.middlewareAba('config_mr'), express.urlencoded({extended:false}), (req, res) => {
+  const { produto_id, variante_id, preco } = req.body;
+  const dashDb = require('./db');
+  const p = parseFloat(preco);
+  if (!produto_id || isNaN(p) || p <= 0) return res.redirect('/painel/revendedor/precos?msg=err');
+  dashDb.salvarPrecoRevendedor(produto_id, variante_id || null, p, req.dashUser.username);
+  res.redirect('/painel/revendedor/precos?msg=ok');
+});
+
+router.post('/revendedor/precos/:id/remover', auth.middlewareAba('config_mr'), (req, res) => {
+  const dashDb = require('./db');
+  dashDb.removerPrecoRevendedor(req.params.id);
+  res.redirect('/painel/revendedor/precos?msg=del');
+});
+
+// ─── DESLIGAR PRODUTO (toggle ativo no site) ──────────────────
+router.post('/produtos/:id/toggle', auth.middlewareAba('config_mr'), (req, res) => {
+  const { db } = getMainDb();
+  const user   = req.dashUser;
+  if (!['sub_dono','dono'].includes(user.cargo)) return res.status(403).send('Sem permissão');
+  const prod = db.prepare('SELECT ativo FROM produtos WHERE id=?').get(req.params.id);
+  if (!prod) return res.redirect('/painel/config-mr?sec=produtos&msg=err');
+  db.prepare('UPDATE produtos SET ativo=? WHERE id=?').run(prod.ativo ? 0 : 1, req.params.id);
+  res.redirect('/painel/config-mr?sec=produtos&msg=ok');
+});
 
 module.exports = router;
