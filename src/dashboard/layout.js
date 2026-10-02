@@ -36,8 +36,9 @@ body::before{content:'';position:fixed;inset:0;z-index:0;background:radial-gradi
 .layout,.auth-bg{position:relative;z-index:1}
 ::-webkit-scrollbar{width:5px;height:5px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:#7c3aed40;border-radius:3px}
 .layout{display:flex;min-height:100vh}
-.sidebar{width:var(--sidebar-w);background:linear-gradient(180deg,#09091e 0%,#07071a 100%);border-right:1px solid var(--border2);display:flex;flex-direction:column;position:fixed;top:0;left:0;bottom:0;z-index:220;overflow-y:auto;box-shadow:4px 0 30px #7c3aed15;transform:translateX(-100%);transition:transform .25s ease}
-.sidebar.open{transform:translateX(0)}
+.sidebar{width:var(--sidebar-w);background:linear-gradient(180deg,#09091e 0%,#07071a 100%);border-right:1px solid var(--border2);display:flex;flex-direction:column;position:sticky;top:0;height:100vh;z-index:220;overflow-y:auto;box-shadow:4px 0 30px #7c3aed15;flex-shrink:0;transition:width .25s ease,opacity .25s ease}
+.sidebar.hidden{width:0;opacity:0;overflow:hidden;border:none;box-shadow:none}
+.sidebar.open{width:var(--sidebar-w);opacity:1}
 .sidebar-logo{padding:24px 20px 20px;border-bottom:1px solid var(--border);position:relative;overflow:hidden}
 .sidebar-logo .brand{font-size:22px;font-weight:900;letter-spacing:2px;background:linear-gradient(135deg,#c0a020,#f0c040,#a855f7);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;filter:drop-shadow(0 0 8px #c0a02060)}
 .sidebar-logo .sub{font-size:10px;color:#7070a0;margin-top:3px;letter-spacing:1px;text-transform:uppercase}
@@ -58,7 +59,7 @@ body::before{content:'';position:fixed;inset:0;z-index:0;background:radial-gradi
 .user-cargo{font-size:11px;font-weight:600;margin-top:1px}
 .logout-btn{display:block;text-align:center;margin-top:10px;color:var(--text2);font-size:12px;text-decoration:none;padding:7px;border-radius:8px;transition:all .18s;border:1px solid transparent}
 .logout-btn:hover{background:#ff445515;color:var(--red);border-color:#ff445530}
-.main{margin-left:0;flex:1;padding:32px;min-height:100vh;position:relative;z-index:1;transition:margin-left .25s ease}
+.main{flex:1;padding:32px;min-height:100vh;position:relative;z-index:1;transition:padding .25s ease;min-width:0}
 .page-header{margin-bottom:28px}
 .page-title{font-size:28px;font-weight:900;color:#fff;background:linear-gradient(135deg,#fff 30%,#c4b5fd);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
 .stats-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:14px;margin-bottom:28px}
@@ -124,9 +125,9 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#7c3aed08}
 .main > *:nth-child(2){animation-delay:.05s}
 .main > *:nth-child(3){animation-delay:.1s}
 @media(max-width:900px){
-  :root{--sidebar-w:0px}
-  .sidebar{transform:translateX(-100%);transition:transform .25s ease;width:240px;position:fixed;top:0;left:0;bottom:0;z-index:999}
+  .sidebar{position:fixed;top:0;left:0;bottom:0;width:240px!important;opacity:1!important;overflow-y:auto;transform:translateX(-100%);transition:transform .25s ease;z-index:999}
   .sidebar.open{transform:translateX(0)}
+  .sidebar.hidden{transform:translateX(-100%)}
   .main{margin-left:0;padding:14px}
   .stats-grid{grid-template-columns:repeat(2,1fr)}
   .produtos-grid{grid-template-columns:repeat(2,1fr)}
@@ -220,7 +221,7 @@ function layout(user, title, body, activePage = '') {
 <title>${title} — MrStore</title>
 ${CSS}
 <style>
-.hamburger{display:flex;position:fixed;top:14px;left:14px;z-index:300;background:linear-gradient(135deg,#7c3aed,#5b21b6);border:none;border-radius:9px;width:40px;height:40px;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 4px 15px #7c3aed40;color:#fff;font-size:20px}
+.hamburger{display:flex;position:fixed;top:14px;left:14px;z-index:1000;background:linear-gradient(135deg,#7c3aed,#5b21b6);border:none;border-radius:9px;width:40px;height:40px;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 4px 15px #7c3aed40;color:#fff;font-size:20px}
 .main{padding-top:60px!important}
 </style>
 </head>
@@ -251,33 +252,49 @@ ${CSS}
   </main>
 </div>
 <script>
-var isDesktop = window.innerWidth > 900;
+var _desktop = window.innerWidth > 900;
 function toggleMenu(){
-  isDesktop = window.innerWidth > 900;
-  document.getElementById('sidebar').classList.contains('open')?fecharMenu():abrirMenu();
+  _desktop = window.innerWidth > 900;
+  var sb = document.getElementById('sidebar');
+  var isOpen = !sb.classList.contains('hidden');
+  isOpen ? fecharMenu() : abrirMenu();
 }
 function abrirMenu(){
-  document.getElementById('sidebar').classList.add('open');
-  if(!isDesktop){document.getElementById('sb-backdrop').style.display='block';}
+  _desktop = window.innerWidth > 900;
+  var sb = document.getElementById('sidebar');
+  sb.classList.remove('hidden');
+  sb.classList.add('open');
   document.getElementById('ham-btn').textContent='✕';
-  if(isDesktop){document.querySelector('.main').style.marginLeft='240px';}
+  if(!_desktop){
+    document.getElementById('sb-backdrop').style.display='block';
+  }
 }
 function fecharMenu(){
-  document.getElementById('sidebar').classList.remove('open');
+  _desktop = window.innerWidth > 900;
+  var sb = document.getElementById('sidebar');
+  sb.classList.add('hidden');
+  sb.classList.remove('open');
   document.getElementById('sb-backdrop').style.display='none';
   document.getElementById('ham-btn').textContent='☰';
-  if(window.innerWidth > 900){document.querySelector('.main').style.marginLeft='0px';}
 }
-// Desktop starts with sidebar open
 window.addEventListener('DOMContentLoaded',function(){
+  var sb = document.getElementById('sidebar');
   if(window.innerWidth > 900){
-    document.getElementById('sidebar').classList.add('open');
+    // Desktop: começa aberta, não sobrepõe
+    sb.classList.add('open');
+    sb.classList.remove('hidden');
     document.getElementById('ham-btn').textContent='✕';
+  } else {
+    // Mobile: começa fechada
+    sb.classList.add('hidden');
+    document.getElementById('ham-btn').textContent='☰';
   }
 });
 window.addEventListener('resize',function(){
+  var sb = document.getElementById('sidebar');
   if(window.innerWidth > 900){
     document.getElementById('sb-backdrop').style.display='none';
+    // No resize para desktop, se estava hidden mantém; se estava open mantém
   }
 });
 </script>

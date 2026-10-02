@@ -273,7 +273,7 @@ router.get('/loja', auth.middlewareAba('loja'), (req, res) => {
     SELECT p.*, COUNT(v.id) as variantes
     FROM produtos p
     LEFT JOIN variantes_produto v ON v.produto_id=p.id AND v.ativo=1
-    ${where} GROUP BY p.id ORDER BY p.categoria ASC, p.destaque DESC, p.vendas DESC
+    ${where} GROUP BY p.id ORDER BY p.categoria ASC, p.nome ASC
   `).all();
 
   // Agrupar por categoria
@@ -333,9 +333,7 @@ router.get('/loja', auth.middlewareAba('loja'), (req, res) => {
     <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:20px">
       <form method="GET" style="display:flex;gap:8px;flex:1">
         <input class="form-control" name="q" value="${search}" placeholder="Buscar produto..." style="max-width:280px">
-        <input type="hidden" name="cat" value="${catFiltro}">
       </form>
-      <div style="display:flex;gap:6px;flex-wrap:wrap">${catTabs}</div>
     </div>
     ${lojaHtml || '<div style="text-align:center;color:#7070a0;padding:64px;font-size:18px">📦 Nenhum produto disponível</div>'}`;
 
