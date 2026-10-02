@@ -250,24 +250,42 @@ client.once('ready', async () => {
 
       // ── Sync automático de categorias Discord → banco ──────────────────
       try {
+        // Mapeamento fixo: canal_id → categoria (definido pelo dono)
+        const CANAL_CATEGORIA = {
+          '1544831949531516938': 'Loja Free Fire',   // Smoke FF
+          '1554274779341783060': 'Loja Free Fire',   // BR Mods
+          '1549523707293204490': 'Spoofer',           // Spoofer Private
+          '1549538378561757294': 'Spoofer',           // Spoofer Astrix
+          '1553981298064756857': 'Spoofer',           // Spoofer Smoke
+          '1549538342066983003': 'Mod Menu FiveM',    // Astrix Menu
+          '1549538423507910687': 'Mod Menu FiveM',    // Next Menu
+          '1553979985700847626': 'Mod Menu FiveM',    // Smoke Menu
+          '1552328037335433287': 'External',          // (categoria External)
+          '1551791388180611072': 'Combos',            // Combo Astrix
+          '1551791731920478229': 'Combos',            // Combo Smoke
+          '1544956134463504435': 'Contas FiveM',      // Steam WL
+          '1544933939053989958': 'Contas FiveM',      // Discord
+          '1544831892354900068': 'Contas FiveM',      // Rockstar
+          '1544941555473719316': 'Contas FiveM',      // GTA5 Upado
+          '1551027859101974669': 'Contas FiveM',      // GTA5 Instalável
+          '1541882411426517052': 'Contas FiveM',      // WL Cidades FiveM
+          '1548357068396695662': 'Loja Fluxo',        // Armas
+          '1548356989019754606': 'Loja Fluxo',        // Dinheiro
+          '1551041996880220160': 'Loja Extra',        // Otimização
+          '1552359144227340298': 'Loja Extra',        // Autologin
+          '1545668271980941322': 'Loja Extra',        // Caixa Misteriosa
+        };
+
         const todosPaineis = db.prepare('SELECT * FROM paineis_canal WHERE produto_id IS NOT NULL').all();
         let syncOk = 0;
         for (const painel of todosPaineis) {
-          const canal = guild.channels.cache.get(painel.canal_id)
-            || await client.channels.fetch(painel.canal_id).catch(() => null);
-          if (!canal?.parent?.name) continue;
-          // Limpa emojis/símbolos, mantém letras/números/espaços/hífen, padroniza maiúsculas
-          const nomeCat = canal.parent.name
-            .replace(/[\u{1F000}-\u{1FFFF}]/gu, '')
-            .replace(/[\u{2000}-\u{2BFF}]/gu, '')
-            .replace(/[^\p{L}\p{N}\s\-]/gu, '')
-            .replace(/\s+/g, ' ')
-            .trim()
-            .toUpperCase() || 'GERAL';
+          const cat = CANAL_CATEGORIA[painel.canal_id];
+          if (!cat) continue;
           db.prepare("UPDATE produtos SET categoria=?, atualizado_em=strftime('%s','now') WHERE id=?")
-            .run(nomeCat, painel.produto_id);
+            .run(cat, painel.produto_id);
           syncOk++;
         }
+        console.log(`🏷️  Sync categorias: ${syncOk}/${todosPaineis.length} atualizados.`);
 
       // ── Sync automático de imagens — relê embed do Discord para URL atualizada ──
       // URLs do Discord CDN expiram; buscando a mensagem o Discord devolve URL nova
