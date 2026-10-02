@@ -117,7 +117,8 @@ router.post('/cadastro', express.urlencoded({ extended: false }), async (req, re
   const { username, password, discord_id } = req.body;
   if (!username?.trim() || !password || !discord_id?.trim())
     return res.redirect('/painel/cadastro?err=invalid');
-  if (!/^\d+$/.test(discord_id.trim()))
+  // Verificar se o ID Discord é um snowflake válido (17-19 dígitos)
+  if (!/^\d{17,19}$/.test(discord_id.trim()))
     return res.redirect('/painel/cadastro?err=discord');
 
   // Verificar se está no servidor — obrigatório
@@ -1388,6 +1389,10 @@ router.get('/gerenciar', auth.middlewareAba('gerenciar'), (req, res) => {
             <form method="POST" action="/painel/gerenciar/usuarios/${u.id}/reset-ip" style="display:inline">
               <button class="btn btn-sm btn-ghost" title="Reset IP">🔄 IP</button>
             </form>` : ''}
+          ${user.cargo === 'dono' && u.cargo !== 'dono' ? `
+            <form method="POST" action="/painel/gerenciar/usuarios/${u.id}/deletar" style="display:inline" onsubmit="return confirm('Deletar usuário ${u.username}? Esta ação não pode ser desfeita.')">
+              <button class="btn btn-sm btn-danger" title="Deletar usuário">🗑️</button>
+            </form>` : ''}
         </div>
       </td>
     </tr>`;
@@ -1448,6 +1453,16 @@ router.post('/gerenciar/usuarios/:id/cargo', auth.middlewareAba('gerenciar'), ex
 });
 router.post('/gerenciar/usuarios/:id/reset-ip', auth.middlewareAba('gerenciar'), (req, res) => {
   dashDb.resetarIp(req.params.id); res.redirect('/painel/gerenciar?msg=ok');
+});
+
+router.post('/gerenciar/usuarios/:id/deletar', auth.middlewareAba('gerenciar'), (req, res) => {
+  const user = req.dashUser;
+  if (user.cargo !== 'dono') return res.redirect('/painel/gerenciar?msg=err');
+  const alvo = dashDb.getUsuario(req.params.id);
+  // Não pode deletar o próprio dono
+  if (!alvo || alvo.cargo === 'dono') return res.redirect('/painel/gerenciar?msg=err');
+  dashDb.recusarUsuario(req.params.id); // deleta do banco
+  res.redirect('/painel/gerenciar?msg=ok');
 });
 router.post('/gerenciar/permissoes', auth.middlewareAba('gerenciar'), express.urlencoded({extended:false}), (req, res) => {
   const { cargo, aba, val } = req.body;

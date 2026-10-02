@@ -40,6 +40,7 @@ function initDashDB() {
       descricao   TEXT,
       icone       TEXT DEFAULT '📥',
       cor         TEXT DEFAULT '7c3aed',
+      imagem_url  TEXT,
       links       TEXT NOT NULL DEFAULT '[]',
       ordem       INTEGER DEFAULT 0,
       ativo       INTEGER DEFAULT 1,
@@ -79,6 +80,9 @@ function initDashDB() {
       ins.run(cargo, aba, abas.includes(aba) ? 1 : 0);
     }
   }
+
+  // Migração segura — adicionar imagem_url se não existir
+  try { db.exec('ALTER TABLE dash_paineis_cliente ADD COLUMN imagem_url TEXT'); } catch {}
 
   // Garantir que config_mr e clientes estão habilitados para cargos corretos (mesmo em bancos existentes)
   for (const cargo of ['sub_dono', 'dono']) {
