@@ -293,8 +293,8 @@ router.get('/loja', auth.middlewareAba('loja'), (req, res) => {
       onerror="if(!this.dataset.tried){this.dataset.tried=1;this.src='${proxy.replace(/'/g,"\\'")}'}else{this.parentElement.innerHTML='${fallbackIcon.replace(/'/g,"\\'")}'}">`;
   }
 
-  const catTabs = ['', ...categorias].map(c =>
-    `<a href="/painel/loja?cat=${encodeURIComponent(c)}&q=${encodeURIComponent(search)}" class="btn btn-sm ${catFiltro===c?'btn-primary':'btn-ghost'}">${c||'🛍️ Todos'}</a>`
+  const catTabs = categorias.map(c =>
+    `<a href="/painel/loja?cat=${encodeURIComponent(c)}&q=${encodeURIComponent(search)}" class="btn btn-sm ${catFiltro===c?'btn-primary':'btn-ghost'}">${c}</a>`
   ).join('');
 
   let lojaHtml = '';
