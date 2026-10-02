@@ -1775,66 +1775,285 @@ router.get('/meus-pedidos', auth.middlewareAba('meus_pedidos'), (req, res) => {
   res.send(layout(user, '📦 Meus Pedidos', body, 'meus_pedidos'));
 });
 
-// ─── REVENDEDOR ───────────────────────────────────────────────
+// ─── REVENDEDOR — Loja com preços especiais ───────────────────
 router.get('/revendedor', auth.middlewareAba('revendedor'), (req, res) => {
   const { db } = getMainDb();
   const user   = req.dashUser;
   const dashDb = require('./db');
+  const search    = req.query.q   || '';
+  let catFiltro   = req.query.cat || '';
+  const view      = req.query.view || 'loja'; // 'loja' | 'historico'
 
-  // Histórico de compras do revendedor
-  const pedidos = db.prepare(`
-    SELECT p.*, pr.nome as produto_nome, pr.preco as preco_normal, v.nome as variante_nome
-    FROM pedidos p
-    LEFT JOIN produtos pr ON p.produto_id = pr.id
-    LEFT JOIN variantes_produto v ON v.id = CAST(JSON_EXTRACT(p.nota_fiscal, '$.varianteId') AS TEXT)
-    WHERE p.usuario_id=? AND p.status='pago'
-    ORDER BY p.pago_em DESC
-  `).all(user.discord_id);
+  const ORDEM_CATS = ['Loja Free Fire','Spoofer','Mod Menu FiveM','External','Combos','Contas FiveM','Loja Fluxo','Loja Extra'];
+  const catsNoDb   = db.prepare("SELECT DISTINCT categoria FROM produtos WHERE ativo=1 AND categoria IS NOT NULL").all().map(r => r.categoria).filter(Boolean);
+  const categorias = [...ORDEM_CATS.filter(c => catsNoDb.includes(c)), ...catsNoDb.filter(c => !ORDEM_CATS.includes(c)).sort()];
 
-  let totalPago = 0, totalEconomy = 0;
-  const rows = pedidos.map(p => {
-    const precoNormal = p.preco_normal || p.valor_total;
-    const economia    = Math.max(0, (precoNormal * (p.quantidade || 1)) - p.valor_total);
-    totalPago      += p.valor_total;
-    totalEconomy   += economia;
-    return `
-      <tr>
+  // Redireciona para primeira categoria se não tiver filtro
+  if (view === 'loja' && !catFiltro && !search && categorias.length > 0) {
+    return res.redirect(`/painel/revendedor?cat=${encodeURIComponent(categorias[0])}`);
+  }
+
+  // Buscar todos os preços de revendedor em um map
+  const precosRev = dashDb.listarPrecosRevendedor();
+  const precoMap  = {};
+  precosRev.forEach(p => { precoMap[`${p.produto_id}__${p.variante_id||''}`] = p.preco; });
+
+  function getPrecoRev(prodId, varId) {
+    return precoMap[`${prodId}__${varId||''}`] ?? precoMap[`${prodId}__`] ?? null;
+  }
+
+  // ── Aba Loja ──────────────────────────────────────────────────
+  let lojaHtml = '';
+  if (view !== 'historico') {
+    let whereParts = ['p.ativo=1'];
+    if (search)    whereParts.push(`p.nome LIKE '%${search.replace(/'/g,"''")}%'`);
+    if (catFiltro) whereParts.push(`p.categoria='${catFiltro.replace(/'/g,"''")}'`);
+    const where = 'WHERE ' + whereParts.join(' AND ');
+
+    const prods = db.prepare(`
+      SELECT p.*, COUNT(v.id) as variantes
+      FROM produtos p
+      LEFT JOIN variantes_produto v ON v.produto_id=p.id AND v.ativo=1
+      ${where} GROUP BY p.id ORDER BY p.categoria ASC, p.nome ASC
+    `).all();
+
+    const grupos = {};
+    for (const p of prods) {
+      const cat = p.categoria || 'Geral';
+      if (!grupos[cat]) grupos[cat] = [];
+      grupos[cat].push(p);
+    }
+
+    const proxy = (url) => `https://images.weserv.nl/?url=${encodeURIComponent(url)}&w=400&output=webp&maxage=1d`;
+    const imgTag = (url, nome) => {
+      if (!url) return '<div style="width:100%;height:150px;background:linear-gradient(135deg,#12122a,#1a1a35);display:flex;align-items:center;justify-content:center;font-size:48px">📦</div>';
+      const fi = `<div style='width:100%;height:150px;background:linear-gradient(135deg,#12122a,#1a1a35);display:flex;align-items:center;justify-content:center;font-size:48px'>📦</div>`;
+      return `<img src="${url}" loading="lazy" style="width:100%;height:150px;object-fit:cover" onerror="if(!this.dataset.tried){this.dataset.tried=1;this.src='${proxy(url).replace(/'/g,"\\'")}'}else{this.parentElement.innerHTML='${fi.replace(/'/g,"\\'")}'}">`;
+    };
+
+    for (const [cat, catProds] of Object.entries(grupos)) {
+      const cards = catProds.map(p => {
+        const variantes = db.prepare('SELECT * FROM variantes_produto WHERE produto_id=? AND ativo=1 ORDER BY ordem ASC').all(p.id);
+        const precoNormal = variantes.length ? Math.min(...variantes.map(v => v.preco)) : p.preco;
+        const precoRev    = getPrecoRev(p.id, variantes.length === 1 ? variantes[0].id : null) ?? precoNormal;
+        const temDesconto = precoRev < precoNormal;
+        return `
+          <div class="produto-card" onclick="window.location='/painel/revendedor/comprar/${p.id}'">
+            <div class="produto-img">${imgTag(p.imagem_url, p.nome)}</div>
+            <div class="produto-body">
+              <div class="produto-nome">${p.nome}</div>
+              <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap">
+                <span class="produto-preco" style="margin-bottom:0">${fmtMoeda(precoRev)}</span>
+                ${temDesconto ? `<span style="font-size:11px;color:#7070a0;text-decoration:line-through">${fmtMoeda(precoNormal)}</span>` : ''}
+              </div>
+              <div class="produto-desc">${p.descricao || ''}</div>
+              <a href="/painel/revendedor/comprar/${p.id}" class="btn btn-primary" style="width:100%;font-size:12px;background:linear-gradient(135deg,#f97316,#ea580c)" onclick="event.stopPropagation()">🏪 Comprar</a>
+            </div>
+          </div>`;
+      }).join('');
+      lojaHtml += `
+        <div style="margin-bottom:32px">
+          <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
+            <div style="height:2px;flex:0 0 24px;background:linear-gradient(90deg,#f97316,transparent)"></div>
+            <span style="font-size:16px;font-weight:800;color:#fff;text-transform:uppercase;letter-spacing:1px">${cat}</span>
+            <div style="height:2px;flex:1;background:linear-gradient(90deg,#f9731620,transparent)"></div>
+          </div>
+          <div class="produtos-grid">${cards}</div>
+        </div>`;
+    }
+  }
+
+  // ── Aba Histórico ─────────────────────────────────────────────
+  let historicoHtml = '';
+  if (view === 'historico') {
+    const pedidos = db.prepare(`
+      SELECT p.*, pr.nome as produto_nome, pr.preco as preco_normal
+      FROM pedidos p
+      LEFT JOIN produtos pr ON p.produto_id = pr.id
+      WHERE p.usuario_id=? AND p.status='pago'
+      ORDER BY p.pago_em DESC
+    `).all(user.discord_id);
+
+    let totalPago = 0, totalEconomy = 0;
+    const rows = pedidos.map(p => {
+      const precoNormal = (p.preco_normal || p.valor_unit || p.valor_total) * (p.quantidade || 1);
+      const economia    = Math.max(0, precoNormal - p.valor_total);
+      totalPago      += p.valor_total;
+      totalEconomy   += economia;
+      return `<tr>
         <td><code style="font-size:11px">${p.id.slice(0,8).toUpperCase()}</code></td>
-        <td>${p.produto_nome || '—'}${p.variante_nome ? ` <span style="color:#7070a0;font-size:11px">/ ${p.variante_nome}</span>` : ''}</td>
+        <td>${p.produto_nome || '—'}</td>
         <td>${p.quantidade || 1}</td>
         <td style="color:#86efac;font-weight:700">${fmtMoeda(p.valor_total)}</td>
-        <td style="color:#7070a0">${fmtMoeda(precoNormal * (p.quantidade || 1))}</td>
+        <td style="color:#7070a0">${fmtMoeda(precoNormal)}</td>
         <td style="color:#00ff88;font-weight:700">${fmtMoeda(economia)}</td>
         <td>${fmtDate(p.pago_em)}</td>
       </tr>`;
-  }).join('');
+    }).join('');
 
-  const body = `
-    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:14px;margin-bottom:28px">
-      <div class="stat-card" style="--glow-a:#f97316;--glow-b:#f59e0b">
-        <div class="stat-label">Total Gasto</div>
-        <div class="stat-value" style="color:#f97316">${fmtMoeda(totalPago)}</div>
+    historicoHtml = `
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:14px;margin-bottom:24px">
+        <div class="stat-card" style="--glow-a:#f97316;--glow-b:#f59e0b">
+          <div class="stat-label">Total Gasto</div>
+          <div class="stat-value" style="color:#f97316">${fmtMoeda(totalPago)}</div>
+        </div>
+        <div class="stat-card" style="--glow-a:#00ff88;--glow-b:#34d399">
+          <div class="stat-label">Economizado</div>
+          <div class="stat-value" style="color:#00ff88">${fmtMoeda(totalEconomy)}</div>
+        </div>
+        <div class="stat-card" style="--glow-a:#7c3aed;--glow-b:#a855f7">
+          <div class="stat-label">Compras</div>
+          <div class="stat-value">${pedidos.length}</div>
+        </div>
       </div>
-      <div class="stat-card" style="--glow-a:#00ff88;--glow-b:#34d399">
-        <div class="stat-label">Total Economizado</div>
-        <div class="stat-value" style="color:#00ff88">${fmtMoeda(totalEconomy)}</div>
-      </div>
-      <div class="stat-card" style="--glow-a:#7c3aed;--glow-b:#a855f7">
-        <div class="stat-label">Compras Realizadas</div>
-        <div class="stat-value">${pedidos.length}</div>
-      </div>
-    </div>
-    <div class="table-card">
-      <div class="table-head"><span class="table-title">🏪 Histórico de Compras — Revendedor</span></div>
-      ${pedidos.length === 0 ? `
-        <div style="text-align:center;padding:48px;color:#7070a0">Nenhuma compra realizada ainda.</div>` : `
-      <table>
-        <tr><th>Pedido</th><th>Produto</th><th>Qtd</th><th>Pago</th><th>Preço Normal</th><th>Economia</th><th>Data</th></tr>
-        ${rows}
-      </table>`}
+      <div class="table-card">
+        <div class="table-head"><span class="table-title">📋 Histórico de Compras</span></div>
+        ${pedidos.length === 0 ? '<div style="text-align:center;padding:48px;color:#7070a0">Nenhuma compra ainda.</div>' : `
+        <table>
+          <tr><th>Pedido</th><th>Produto</th><th>Qtd</th><th>Pago</th><th>Preço Normal</th><th>Economia</th><th>Data</th></tr>
+          ${rows}
+        </table>`}
+      </div>`;
+  }
+
+  const catTabs = categorias.map(c =>
+    `<a href="/painel/revendedor?cat=${encodeURIComponent(c)}" class="btn btn-sm ${catFiltro===c?'btn-primary':'btn-ghost'}" style="${catFiltro===c?'background:linear-gradient(135deg,#f97316,#ea580c);border-color:#f97316':''}">${c}</a>`
+  ).join('');
+
+  const viewTabs = `
+    <div style="display:flex;gap:8px;margin-bottom:20px">
+      <a href="/painel/revendedor?cat=${encodeURIComponent(categorias[0]||'')}" class="btn btn-sm ${view!=='historico'?'btn-primary':'btn-ghost'}">🛍️ Loja</a>
+      <a href="/painel/revendedor?view=historico" class="btn btn-sm ${view==='historico'?'btn-primary':'btn-ghost'}">📋 Meu Histórico</a>
     </div>`;
 
-  res.send(layout(user, '🏪 Área do Revendedor', body, 'revendedor'));
+  const body = `
+    ${viewTabs}
+    ${view !== 'historico' ? `
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:20px">
+      <form method="GET" style="display:flex;gap:8px">
+        <input class="form-control" name="q" value="${search}" placeholder="Buscar produto..." style="max-width:260px">
+      </form>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">${catTabs}</div>
+    </div>
+    ${lojaHtml || '<div style="text-align:center;color:#7070a0;padding:64px">📦 Nenhum produto disponível</div>'}` : historicoHtml}`;
+
+  res.send(layout(user, '🏪 Revendedor', body, 'revendedor'));
+});
+
+// ─── REVENDEDOR — Comprar produto ────────────────────────────
+router.get('/revendedor/comprar/:produtoId', auth.middlewareAba('revendedor'), (req, res) => {
+  const { db } = getMainDb();
+  const user   = req.dashUser;
+  const dashDb = require('./db');
+  const prod   = db.prepare('SELECT * FROM produtos WHERE id=? AND ativo=1').get(req.params.produtoId);
+  if (!prod) return res.redirect('/painel/revendedor');
+
+  const precosRev = dashDb.listarPrecosRevendedor();
+  const precoMap  = {};
+  precosRev.forEach(p => { precoMap[`${p.produto_id}__${p.variante_id||''}`] = p.preco; });
+  const getPrecoRev = (prodId, varId) => precoMap[`${prodId}__${varId||''}`] ?? precoMap[`${prodId}__`] ?? null;
+
+  const variantes  = db.prepare('SELECT * FROM variantes_produto WHERE produto_id=? AND ativo=1 ORDER BY ordem ASC').all(prod.id);
+  const varOptions = variantes.map(v => {
+    const disp   = db.prepare('SELECT COUNT(*) as c FROM estoque_variante WHERE variante_id=? AND usado=0').get(v.id)?.c || 0;
+    const pRev   = getPrecoRev(prod.id, v.id) ?? v.preco;
+    return `<option value="${v.id}" ${disp===0?'disabled':''}>${v.nome} — ${fmtMoeda(pRev)} ${disp===0?'(sem estoque)':'('+disp+' disp.)'}</option>`;
+  }).join('');
+
+  const precoBase  = variantes.length ? Math.min(...variantes.map(v => getPrecoRev(prod.id,v.id)??v.preco)) : (getPrecoRev(prod.id,null)??prod.preco);
+  const precoNorm  = variantes.length ? Math.min(...variantes.map(v => v.preco)) : prod.preco;
+  const temDesconto = precoBase < precoNorm;
+
+  const imgSrc = prod.imagem_url || null;
+
+  const body = `
+    <a href="/painel/revendedor" class="btn btn-ghost btn-sm" style="margin-bottom:20px">← Voltar</a>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:28px">
+      <div>
+        ${imgSrc ? `<img src="${imgSrc}" style="width:100%;border-radius:14px;border:1px solid var(--border2)" onerror="this.style.display='none'">` : `<div style="width:100%;height:220px;background:linear-gradient(135deg,#12122a,#1a1a35);border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:64px">📦</div>`}
+        <div style="margin-top:16px;padding:16px;background:var(--card2);border:1px solid var(--border);border-radius:12px">
+          <div style="font-size:12px;color:#7070a0;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Categoria</div>
+          <div style="font-weight:600">${prod.categoria||'Geral'}</div>
+        </div>
+      </div>
+      <div>
+        <h2 style="font-size:24px;font-weight:900;margin-bottom:8px;background:linear-gradient(135deg,#fff,#fbd38d);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text">${prod.nome}</h2>
+        <p style="color:#7070a0;margin-bottom:16px;line-height:1.6">${prod.descricao||''}</p>
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;background:#f9731615;border:1px solid #f9731640;padding:12px 16px;border-radius:10px">
+          <span style="font-size:22px;font-weight:900;color:#f97316">${fmtMoeda(precoBase)}</span>
+          ${temDesconto ? `<div><div style="color:#7070a0;font-size:12px">Preço normal: <span style="text-decoration:line-through">${fmtMoeda(precoNorm)}</span></div><div style="color:#00ff88;font-size:11px;font-weight:700">🏪 Preço revendedor</div></div>` : '<span style="color:#7070a0;font-size:12px">Preço revendedor</span>'}
+        </div>
+        <form method="POST" action="/painel/revendedor/finalizar">
+          <input type="hidden" name="produto_id" value="${prod.id}">
+          ${variantes.length ? `<div class="form-group"><label>Variante / Plano</label><select class="form-control" name="variante_id" required>${varOptions}</select></div>` : ''}
+          <div class="form-group">
+            <label>Quantidade</label>
+            <div style="display:flex;align-items:center;gap:10px">
+              <button type="button" onclick="ajustarQtd(-1)" class="btn btn-ghost btn-sm" style="width:36px;height:36px;padding:0;font-size:18px">−</button>
+              <input class="form-control" id="qtd" name="quantidade" type="number" value="1" min="1" max="99" style="width:70px;text-align:center">
+              <button type="button" onclick="ajustarQtd(1)" class="btn btn-ghost btn-sm" style="width:36px;height:36px;padding:0;font-size:18px">+</button>
+            </div>
+          </div>
+          <button class="btn btn-primary" type="submit" style="width:100%;padding:14px;font-size:16px;background:linear-gradient(135deg,#f97316,#ea580c);box-shadow:0 4px 15px #f9731640">
+            🏪 Comprar como Revendedor
+          </button>
+        </form>
+      </div>
+    </div>
+    <script>function ajustarQtd(d){const i=document.getElementById('qtd');i.value=Math.max(1,Math.min(99,parseInt(i.value||1)+d));}</script>`;
+
+  res.send(layout(user, `🏪 ${prod.nome}`, body, 'revendedor'));
+});
+
+router.post('/revendedor/finalizar', auth.middlewareAba('revendedor'), express.urlencoded({extended:false}), async (req, res) => {
+  const { produto_id, variante_id, quantidade } = req.body;
+  const user    = req.dashUser;
+  const { db, Usuarios, Pedidos, Cupons } = getMainDb();
+  const dashDb  = require('./db');
+  const qtd     = Math.max(1, Math.min(99, parseInt(quantidade) || 1));
+
+  try {
+    Usuarios.garantir(user.discord_id, user.username);
+    if (!user.discord_id || user.discord_id === '0') return res.redirect('/painel/revendedor?msg=err');
+
+    const variante = variante_id ? db.prepare('SELECT * FROM variantes_produto WHERE id=?').get(variante_id) : null;
+    const produto  = db.prepare('SELECT * FROM produtos WHERE id=? AND ativo=1').get(produto_id);
+    if (!produto) return res.redirect('/painel/revendedor');
+
+    // Preço revendedor
+    const precosRev = dashDb.listarPrecosRevendedor();
+    const precoMap  = {};
+    precosRev.forEach(p => { precoMap[`${p.produto_id}__${p.variante_id||''}`] = p.preco; });
+    const getP = (prodId, varId) => precoMap[`${prodId}__${varId||''}`] ?? precoMap[`${prodId}__`] ?? null;
+
+    const precoBase = variante?.preco || produto.preco;
+    const precoRev  = getP(produto_id, variante_id || null) ?? precoBase;
+    const valorFinal = Math.max(0.01, precoRev * qtd);
+
+    const pedidoId = Pedidos.criar({
+      usuarioId:  user.discord_id,
+      produtoId:  produto_id,
+      quantidade: qtd,
+      valorUnit:  precoRev,
+      valorTotal: valorFinal,
+      desconto:   Math.max(0, (precoBase - precoRev) * qtd),
+      cupomUsado: null,
+      metodoPag:  'pix',
+    });
+    db.prepare("UPDATE pedidos SET nota_fiscal=? WHERE id=?").run(JSON.stringify({ varianteId: variante_id||null, via:'revendedor', qtd }), pedidoId);
+
+    const efi  = require('../systems/efi');
+    const cobr = await efi.criarCobrancaPix({ valor: valorFinal, descricao: `${produto.nome} — MrStore Rev`, pedidoId, nomeCliente: user.username });
+    const qr   = await efi.gerarQRCode(cobr.locId);
+    db.prepare("UPDATE pedidos SET tx_id=?, qr_code=? WHERE id=?").run(cobr.txid, qr.qrcode, pedidoId);
+
+    const { iniciarPollingPedidoDash: _polling } = require('./router');
+    iniciarPollingPedidoDash(pedidoId, cobr.txid, user, produto, variante_id, null);
+    res.redirect(`/painel/loja/pagar/${pedidoId}`);
+  } catch (e) {
+    console.error('[Revendedor Finalizar]', e.message);
+    res.redirect('/painel/revendedor?msg=err');
+  }
 });
 
 // ─── PREÇOS REVENDEDOR (config — só dono/sub_dono) ────────────
