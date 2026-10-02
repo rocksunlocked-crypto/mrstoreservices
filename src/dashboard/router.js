@@ -1439,83 +1439,118 @@ router.post('/cupons/:cod/deletar',auth.middlewareAba('cupons'),(req,res)=>{
 
 // ─── GERENCIAR (dono/sub_dono) ───────────────────────────────
 router.get('/gerenciar', auth.middlewareAba('gerenciar'), (req, res) => {
-  const user = req.dashUser;
+  const user  = req.dashUser;
   const users = dashDb.listarUsuarios();
   const msg   = req.query.msg || '';
+  const podeEditar = ['sub_dono','dono'].includes(user.cargo);
 
   const usersRows = users.map(u => {
     const ci = CARGO_LABELS[u.cargo] || CARGO_LABELS.cliente;
     return `<tr>
-      <td><strong>${u.username}</strong>${!u.aprovado?'<span class="badge badge-yellow" style="margin-left:6px;font-size:10px">pendente</span>':''}</td>
-      <td><code style="font-size:11px">${u.discord_id}</code></td>
-      <td><span style="color:${ci.color}">${ci.icon} ${ci.label}</span></td>
-      <td>${u.ip_bloqueado ? `<code style="font-size:10px">${u.ip_bloqueado}</code>` : '<span style="color:#7878a0">—</span>'}</td>
-      <td>${fmtDate(u.ultimo_acesso)}</td>
+      <td>
+        <div style="display:flex;align-items:center;gap:8px">
+          <div style="width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,${ci.color}40,${ci.color}20);border:1px solid ${ci.color}50;display:flex;align-items:center;justify-content:center;font-size:14px">${ci.icon}</div>
+          <div>
+            <div style="font-weight:700;color:#fff">${u.username}</div>
+            ${!u.aprovado?'<span class="badge badge-yellow" style="font-size:9px">pendente</span>':''}
+          </div>
+        </div>
+      </td>
+      <td><code style="font-size:10.5px;color:#a78bfa">${u.discord_id}</code></td>
+      <td><span style="color:${ci.color};font-weight:600">${ci.label}</span></td>
+      <td style="font-size:11px;color:#5a5a90">${u.ip_bloqueado ? `<code style="font-size:10px;color:#f59e0b">${u.ip_bloqueado}</code>` : '—'}</td>
+      <td style="font-size:11px;color:#5a5a90">${fmtDate(u.ultimo_acesso)}</td>
       <td>
         <div style="display:flex;gap:4px;flex-wrap:wrap">
-          ${!u.aprovado ? `
+          ${!u.aprovado && podeEditar ? `
             <form method="POST" action="/painel/gerenciar/usuarios/${u.id}/aprovar" style="display:inline">
-              <button class="btn btn-sm btn-success">✅</button>
+              <button class="btn btn-sm btn-success" title="Aprovar">✅</button>
             </form>
             <form method="POST" action="/painel/gerenciar/usuarios/${u.id}/recusar" style="display:inline">
-              <button class="btn btn-sm btn-danger">❌</button>
+              <button class="btn btn-sm btn-danger" title="Recusar">❌</button>
             </form>` : ''}
-          <form method="POST" action="/painel/gerenciar/usuarios/${u.id}/cargo" style="display:inline;display:flex;gap:4px">
-            <select class="form-control" name="cargo" style="width:120px;height:28px;font-size:11px;padding:2px 8px">
+          ${podeEditar ? `
+          <form method="POST" action="/painel/gerenciar/usuarios/${u.id}/cargo" style="display:flex;gap:4px">
+            <select class="form-control" name="cargo" style="width:115px;height:28px;font-size:11px;padding:2px 8px">
               ${CARGOS.map(c=>`<option value="${c}" ${u.cargo===c?'selected':''}>${c}</option>`).join('')}
             </select>
-            <button class="btn btn-sm btn-ghost" type="submit">💾</button>
-          </form>
-          ${u.ip_bloqueado ? `
+            <button class="btn btn-sm btn-ghost" type="submit" title="Salvar cargo">💾</button>
+          </form>` : `<span class="badge badge-gray" style="font-size:10px">${ci.label}</span>`}
+          ${u.ip_bloqueado && podeEditar ? `
             <form method="POST" action="/painel/gerenciar/usuarios/${u.id}/reset-ip" style="display:inline">
-              <button class="btn btn-sm btn-ghost" title="Reset IP">🔄 IP</button>
+              <button class="btn btn-sm btn-ghost" title="Reset IP">🔄</button>
             </form>` : ''}
+          ${podeEditar ? `<a href="/painel/gerenciar/usuarios/${u.id}/senha" class="btn btn-sm btn-ghost" title="Senha">🔑</a>` : ''}
           ${user.cargo === 'dono' && u.cargo !== 'dono' ? `
-            <form method="POST" action="/painel/gerenciar/usuarios/${u.id}/deletar" style="display:inline" onsubmit="return confirm('Deletar usuário ${u.username}? Esta ação não pode ser desfeita.')">
-              <button class="btn btn-sm btn-danger" title="Deletar usuário">🗑️</button>
+            <form method="POST" action="/painel/gerenciar/usuarios/${u.id}/deletar" style="display:inline" onsubmit="return confirm('Deletar ${u.username}?')">
+              <button class="btn btn-sm btn-danger" title="Deletar">🗑️</button>
             </form>` : ''}
         </div>
       </td>
     </tr>`;
   }).join('');
 
-  // Permissões por cargo
+  // ── Tabela de permissões — cards coloridos por cargo ──────────
   const ABAS_LISTA = Object.keys(ABAS_INFO);
-  const permTable = CARGOS.filter(c => c !== 'dono').map(cargo => {
+  const CARGO_ORDER = ['cliente','revendedor','staff','resp_staff','sub_dono'];
+
+  const permCards = CARGO_ORDER.map(cargo => {
     const perms = dashDb.getPermissoes(cargo);
-    const checks = ABAS_LISTA.map(aba =>
-      `<td style="text-align:center">
-        <form method="POST" action="/painel/gerenciar/permissoes" style="display:inline">
+    const ci    = CARGO_LABELS[cargo];
+    const chips = ABAS_LISTA.map(aba => {
+      const tem = perms[aba];
+      if (podeEditar) {
+        return `<form method="POST" action="/painel/gerenciar/permissoes" style="display:inline;margin:3px">
           <input type="hidden" name="cargo" value="${cargo}">
           <input type="hidden" name="aba" value="${aba}">
-          <input type="hidden" name="val" value="${perms[aba]?'0':'1'}">
-          <button type="submit" style="background:none;border:none;cursor:pointer;font-size:16px" title="${perms[aba]?'Remover':'Conceder'}">${perms[aba]?'✅':'❌'}</button>
-        </form>
-      </td>`
-    ).join('');
-    const ci = CARGO_LABELS[cargo];
-    return `<tr><td><span style="color:${ci.color}">${ci.icon} ${ci.label}</span></td>${checks}</tr>`;
+          <input type="hidden" name="val" value="${tem?'0':'1'}">
+          <button type="submit" title="${tem?'Remover permissão de ':'Conceder '}${aba}"
+            style="display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:20px;font-size:11px;font-weight:600;cursor:pointer;border:1px solid ${tem?ci.color+'50':'#ffffff15'};background:${tem?ci.color+'18':'rgba(0,0,0,0.2)'};color:${tem?ci.color:'#5a5a90'};transition:all .15s">
+            ${ABAS_INFO[aba].icon} ${ABAS_INFO[aba].label}
+          </button>
+        </form>`;
+      } else {
+        return `<span style="display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:20px;font-size:11px;font-weight:600;margin:3px;border:1px solid ${tem?ci.color+'50':'#ffffff10'};background:${tem?ci.color+'15':'rgba(0,0,0,0.15)'};color:${tem?ci.color:'#3a3a60'}">
+          ${ABAS_INFO[aba].icon} ${ABAS_INFO[aba].label}
+        </span>`;
+      }
+    }).join('');
+
+    return `
+      <div style="background:linear-gradient(135deg,var(--card),var(--card2));border:1px solid ${ci.color}25;border-radius:14px;padding:18px;border-left:3px solid ${ci.color}">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+          <div style="width:36px;height:36px;border-radius:50%;background:${ci.color}20;border:1px solid ${ci.color}50;display:flex;align-items:center;justify-content:center;font-size:18px">${ci.icon}</div>
+          <div>
+            <div style="font-size:15px;font-weight:800;color:${ci.color}">${ci.label}</div>
+            <div style="font-size:11px;color:#5a5a90">Clique para ${podeEditar?'conceder/remover':'ver'} permissões</div>
+          </div>
+        </div>
+        <div style="display:flex;flex-wrap:wrap;gap:4px">${chips}</div>
+      </div>`;
   }).join('');
 
   const body = `
     ${msg==='ok'?alert('success','✅ Feito!'):msg==='err'?alert('error','❌ Erro.'):''}
+    ${!podeEditar ? `<div class="alert alert-info">👁️ Você tem acesso somente visualização. Apenas Dono e Sub-Dono podem editar.</div>` : ''}
 
     <div class="table-card" style="margin-bottom:28px">
-      <div class="table-head"><span class="table-title">👥 Usuários do Painel (${users.length})</span></div>
+      <div class="table-head">
+        <span class="table-title">👥 Usuários do Painel <span class="badge badge-blue" style="font-size:11px">${users.length}</span></span>
+      </div>
       <table>
         <tr><th>Usuário</th><th>Discord ID</th><th>Cargo</th><th>IP Registrado</th><th>Último acesso</th><th>Ações</th></tr>
-        ${usersRows || '<tr><td colspan="6" style="text-align:center;color:#7878a0;padding:24px">Nenhum</td></tr>'}
+        ${usersRows || '<tr><td colspan="6" style="text-align:center;color:#5a5a90;padding:24px">Nenhum usuário</td></tr>'}
       </table>
     </div>
 
-    <div class="table-card">
-      <div class="table-head"><span class="table-title">🔐 Permissões por Cargo</span><span style="font-size:12px;color:#7878a0">Clique no ✅/❌ para alternar</span></div>
-      <div style="overflow-x:auto">
-        <table>
-          <tr><th>Cargo</th>${ABAS_LISTA.map(a=>`<th style="text-align:center">${ABAS_INFO[a].icon}<br><span style="font-size:10px">${a}</span></th>`).join('')}</tr>
-          ${permTable}
-        </table>
+    <div style="margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
+      <div>
+        <div style="font-size:16px;font-weight:800;color:#fff;margin-bottom:4px">🔐 Permissões por Cargo</div>
+        <div style="font-size:12px;color:#5a5a90">${podeEditar?'Clique em uma aba para conceder ou remover acesso.':'Visualização das permissões. Apenas Dono/Sub-Dono podem editar.'}</div>
       </div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:16px">
+      ${permCards}
     </div>`;
 
   res.send(layout(user, '⚙️ Gerenciar', body, 'gerenciar'));
@@ -1546,6 +1581,7 @@ router.post('/gerenciar/usuarios/:id/deletar', auth.middlewareAba('gerenciar'), 
   res.redirect('/painel/gerenciar?msg=ok');
 });
 router.post('/gerenciar/permissoes', auth.middlewareAba('gerenciar'), express.urlencoded({extended:false}), (req, res) => {
+  if (!['sub_dono','dono'].includes(req.dashUser.cargo)) return res.redirect('/painel/gerenciar?msg=err');
   const { cargo, aba, val } = req.body;
   if (cargo && aba) dashDb.setPermissao(cargo, aba, val === '1');
   res.redirect('/painel/gerenciar?msg=ok');
@@ -2083,89 +2119,113 @@ router.post('/revendedor/finalizar', auth.middlewareAba('revendedor'), express.u
   }
 });
 
-// ─── PREÇOS REVENDEDOR (config — só dono/sub_dono) ────────────
+// ─── PREÇOS REVENDEDOR — bulk save ────────────────────────────
 router.get('/revendedor/precos', auth.middlewareAba('config_mr'), (req, res) => {
   const { db } = getMainDb();
   const user   = req.dashUser;
   const dashDb = require('./db');
   const msg    = req.query.msg || '';
 
-  const produtos  = db.prepare('SELECT * FROM produtos WHERE ativo=1 ORDER BY categoria, nome').all();
-  const precos    = dashDb.listarPrecosRevendedor();
-
+  const produtos = db.prepare('SELECT * FROM produtos WHERE ativo=1 ORDER BY categoria, nome').all();
+  const precos   = dashDb.listarPrecosRevendedor();
   const precoMap = {};
-  precos.forEach(p => { precoMap[`${p.produto_id}__${p.variante_id||''}`] = p; });
+  precos.forEach(p => { precoMap[`${p.produto_id}__${p.variante_id||''}`] = p.preco; });
 
-  const rows = produtos.map(p => {
-    const variantes = db.prepare('SELECT * FROM variantes_produto WHERE produto_id=? AND ativo=1 ORDER BY ordem').all(p.id);
-    if (variantes.length === 0) {
-      const key = `${p.id}__`;
-      const pr  = precoMap[key];
-      return `<tr>
-        <td>${p.nome} <span class="badge badge-purple" style="font-size:10px">${p.categoria||'Geral'}</span></td>
-        <td style="color:#7070a0">—</td>
-        <td style="color:#86efac">${fmtMoeda(p.preco)}</td>
-        <td>
-          <form method="POST" action="/painel/revendedor/precos/salvar" style="display:flex;gap:6px;align-items:center">
-            <input type="hidden" name="produto_id" value="${p.id}">
-            <input type="hidden" name="variante_id" value="">
-            <input class="form-control" type="number" name="preco" step="0.01" min="0.01" value="${pr?.preco||''}" placeholder="Preço rev." style="width:120px;padding:6px 10px">
-            <button class="btn btn-sm btn-primary" type="submit">💾</button>
-            ${pr ? `<form method="POST" action="/painel/revendedor/precos/${pr.id}/remover" style="display:inline"><button class="btn btn-sm btn-danger" type="submit" onclick="return confirm('Remover?')">🗑️</button></form>` : ''}
-          </form>
-        </td>
-      </tr>`;
+  // Agrupar por categoria
+  const grupos = {};
+  for (const p of produtos) {
+    const cat = p.categoria || 'Geral';
+    if (!grupos[cat]) grupos[cat] = [];
+    grupos[cat].push(p);
+  }
+
+  let idx = 0;
+  let hiddens = '';
+  let tableRows = '';
+
+  for (const [cat, catProds] of Object.entries(grupos)) {
+    tableRows += `<tr><td colspan="4" style="background:rgba(109,40,217,0.1);color:#c4b5fd;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;padding:8px 16px">${cat}</td></tr>`;
+    for (const p of catProds) {
+      const variantes = db.prepare('SELECT * FROM variantes_produto WHERE produto_id=? AND ativo=1 ORDER BY ordem').all(p.id);
+      if (variantes.length === 0) {
+        const precoAtual = precoMap[`${p.id}__`] ?? '';
+        hiddens += `<input type="hidden" name="pid_${idx}" value="${p.id}"><input type="hidden" name="vid_${idx}" value="">`;
+        tableRows += `<tr>
+          <td style="font-weight:600;color:#fff">${p.nome}</td>
+          <td style="color:#5a5a90">—</td>
+          <td style="color:#00e87a;font-weight:600">${fmtMoeda(p.preco)}</td>
+          <td><input class="form-control" type="number" name="preco_${idx}" step="0.01" min="0" value="${precoAtual}" placeholder="Deixe em branco p/ desativar" style="width:180px;padding:7px 12px"></td>
+        </tr>`;
+        idx++;
+      } else {
+        for (const v of variantes) {
+          const precoAtual = precoMap[`${p.id}__${v.id}`] ?? '';
+          hiddens += `<input type="hidden" name="pid_${idx}" value="${p.id}"><input type="hidden" name="vid_${idx}" value="${v.id}">`;
+          tableRows += `<tr>
+            <td style="color:#e8e8ff">${p.nome}</td>
+            <td style="color:#a78bfa;font-weight:500">${v.nome}</td>
+            <td style="color:#00e87a;font-weight:600">${fmtMoeda(v.preco)}</td>
+            <td><input class="form-control" type="number" name="preco_${idx}" step="0.01" min="0" value="${precoAtual}" placeholder="Deixe em branco p/ desativar" style="width:180px;padding:7px 12px"></td>
+          </tr>`;
+          idx++;
+        }
+      }
     }
-    return variantes.map(v => {
-      const key = `${p.id}__${v.id}`;
-      const pr  = precoMap[key];
-      return `<tr>
-        <td>${p.nome} <span class="badge badge-purple" style="font-size:10px">${p.categoria||'Geral'}</span></td>
-        <td style="color:#a78bfa">${v.nome}</td>
-        <td style="color:#86efac">${fmtMoeda(v.preco)}</td>
-        <td>
-          <form method="POST" action="/painel/revendedor/precos/salvar" style="display:flex;gap:6px;align-items:center">
-            <input type="hidden" name="produto_id" value="${p.id}">
-            <input type="hidden" name="variante_id" value="${v.id}">
-            <input class="form-control" type="number" name="preco" step="0.01" min="0.01" value="${pr?.preco||''}" placeholder="Preço rev." style="width:120px;padding:6px 10px">
-            <button class="btn btn-sm btn-primary" type="submit">💾</button>
-            ${pr ? `<form method="POST" action="/painel/revendedor/precos/${pr.id}/remover" style="display:inline"><button class="btn btn-sm btn-danger" type="submit" onclick="return confirm('Remover?')">🗑️</button></form>` : ''}
-          </form>
-        </td>
-      </tr>`;
-    }).join('');
-  }).join('');
+  }
 
   const body = `
-    ${msg==='ok' ? `<div class="alert alert-success">✅ Preço salvo!</div>` : ''}
-    ${msg==='del' ? `<div class="alert alert-success">🗑️ Preço removido.</div>` : ''}
-    <div class="table-card">
-      <div class="table-head">
-        <span class="table-title">🏷️ Preços Revendedor</span>
-        <span style="font-size:12px;color:#7070a0">Defina preços especiais para revendedores. Deixe em branco para não ter preço diferenciado.</span>
+    <a href="/painel/revendedor" class="btn btn-ghost btn-sm" style="margin-bottom:20px">← Voltar</a>
+    ${msg==='ok' ? `<div class="alert alert-success">✅ Preços salvos com sucesso!</div>` : ''}
+    ${msg==='err' ? `<div class="alert alert-error">❌ Erro ao salvar.</div>` : ''}
+    <form method="POST" action="/painel/revendedor/precos/bulk">
+      ${hiddens}
+      <input type="hidden" name="total" value="${idx}">
+      <div class="table-card">
+        <div class="table-head">
+          <span class="table-title">🏷️ Preços Revendedor</span>
+          <span style="font-size:12px;color:#5a5a90">Deixe em branco para usar o preço normal. Preencha para dar desconto.</span>
+        </div>
+        <table>
+          <tr><th>Produto</th><th>Variante</th><th>Preço Normal</th><th>Preço Revendedor</th></tr>
+          ${tableRows}
+        </table>
       </div>
-      <table>
-        <tr><th>Produto</th><th>Variante</th><th>Preço Normal</th><th>Preço Revendedor</th></tr>
-        ${rows}
-      </table>
-    </div>`;
+      <div style="position:sticky;bottom:20px;display:flex;justify-content:flex-end;padding:16px 0">
+        <button class="btn btn-primary" type="submit" style="padding:14px 32px;font-size:15px;box-shadow:0 8px 30px rgba(109,40,217,0.5)">
+          💾 Salvar Todos os Preços
+        </button>
+      </div>
+    </form>`;
 
   res.send(layout(user, '🏷️ Preços Revendedor', body, 'config_mr'));
 });
 
-router.post('/revendedor/precos/salvar', auth.middlewareAba('config_mr'), express.urlencoded({extended:false}), (req, res) => {
-  const { produto_id, variante_id, preco } = req.body;
+router.post('/revendedor/precos/bulk', auth.middlewareAba('config_mr'), express.urlencoded({extended:false}), (req, res) => {
   const dashDb = require('./db');
-  const p = parseFloat(preco);
-  if (!produto_id || isNaN(p) || p <= 0) return res.redirect('/painel/revendedor/precos?msg=err');
-  dashDb.salvarPrecoRevendedor(produto_id, variante_id || null, p, req.dashUser.username);
-  res.redirect('/painel/revendedor/precos?msg=ok');
-});
-
-router.post('/revendedor/precos/:id/remover', auth.middlewareAba('config_mr'), (req, res) => {
-  const dashDb = require('./db');
-  dashDb.removerPrecoRevendedor(req.params.id);
-  res.redirect('/painel/revendedor/precos?msg=del');
+  const total  = parseInt(req.body.total) || 0;
+  try {
+    for (let i = 0; i < total; i++) {
+      const prodId  = req.body[`pid_${i}`];
+      const varId   = req.body[`vid_${i}`] || null;
+      const precoStr = (req.body[`preco_${i}`] || '').trim();
+      if (!prodId) continue;
+      if (!precoStr) {
+        // Campo vazio — remover preço se existia
+        const { db } = getMainDb();
+        db.prepare('DELETE FROM dash_precos_revendedor WHERE produto_id=? AND (variante_id=? OR (variante_id IS NULL AND ? IS NULL))')
+          .run(prodId, varId, varId);
+      } else {
+        const p = parseFloat(precoStr);
+        if (!isNaN(p) && p > 0) {
+          dashDb.salvarPrecoRevendedor(prodId, varId, p, req.dashUser.username);
+        }
+      }
+    }
+    res.redirect('/painel/revendedor/precos?msg=ok');
+  } catch (e) {
+    console.error('[Preços Rev Bulk]', e.message);
+    res.redirect('/painel/revendedor/precos?msg=err');
+  }
 });
 
 // ─── DESLIGAR PRODUTO (toggle ativo no site) ──────────────────
