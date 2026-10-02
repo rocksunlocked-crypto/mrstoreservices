@@ -93,6 +93,7 @@ router.post('/login', express.urlencoded({ extended: false }), async (req, res) 
 // ─── CADASTRO ────────────────────────────────────────────────
 router.get('/cadastro', (req, res) => {
   const err = req.query.err || '';
+  const ref = req.query.ref || '';
   const msgs = {
     exists: '❌ Usuário ou Discord ID já cadastrado.',
     invalid: '❌ Preencha todos os campos corretamente.',
@@ -102,12 +103,13 @@ router.get('/cadastro', (req, res) => {
   res.send(loginLayout('Cadastro', `
     <div class="auth-title">Criar conta</div>
     <div class="auth-sub">Preencha os dados para solicitar acesso</div>
+    ${ref === 'compra' ? `<div class="alert alert-info" style="margin-bottom:16px">🛒 Para comprar, crie sua conta e vincule com seu ID do Discord.<br><span style="font-size:12px;color:#7070a0">Com conta vinculada você acessa seu histórico de compras, produtos anteriores e saldo gasto.</span></div>` : ''}
     ${err ? alert('error', msgs[err] || err) : ''}
     <form method="POST" action="/painel/cadastro">
       <div class="form-group"><label>Usuário</label><input class="form-control" name="username" required autofocus minlength="3" maxlength="30"></div>
       <div class="form-group"><label>Senha</label><input class="form-control" type="password" name="password" required minlength="6"></div>
       <div class="form-group"><label>ID do Discord <span style="color:#7878a0;font-weight:400;text-transform:none">(Modo Desenvolvedor → copiar ID)</span></label><input class="form-control" name="discord_id" required pattern="[0-9]+" placeholder="Ex: 123456789012345678"></div>
-      <button class="btn btn-primary" style="width:100%;margin-top:4px" type="submit">Solicitar Acesso</button>
+      <button class="btn btn-primary" style="width:100%;margin-top:4px" type="submit">Criar Conta</button>
     </form>
     <div class="auth-switch">Já tem conta? <a href="/painel/login">Entrar</a></div>
   `));
@@ -164,8 +166,20 @@ router.get('/logout', (req, res) => {
   res.redirect('/painel/login');
 });
 
-// ─── VISÃO GERAL ─────────────────────────────────────────────
-router.get('/', auth.middlewareAba('overview'), (req, res) => {
+// ─── VISÃO GERAL — redireciona para loja (não exige login) ──
+router.get('/', (req, res) => {
+  const user = auth.getSessao(auth.getToken(req), dashDb.getIp(req));
+  if (user && !user.__ipBloqueado) {
+    // Logado — vai para overview ou loja
+    if (dashDb.podeVer(user.cargo, 'overview')) return res.redirect('/painel/overview');
+    return res.redirect('/painel/loja');
+  }
+  // Não logado — vai direto para loja pública
+  return res.redirect('/painel/loja');
+});
+
+// ─── VISÃO GERAL (overview) ───────────────────────────────────
+router.get('/overview', auth.middlewareAba('overview'), (req, res) => {
   const { db } = getMainDb();
   const user   = req.dashUser;
 
@@ -253,7 +267,14 @@ router.get('/', auth.middlewareAba('overview'), (req, res) => {
 });
 
 // ─── LOJA ────────────────────────────────────────────────────
-router.get('/loja', auth.middlewareAba('loja'), (req, res) => {
+// Loja é pública — aceita visitantes não logados
+router.get('/loja', (req, res, next) => {
+  const user = auth.getSessao(auth.getToken(req), dashDb.getIp(req));
+  if (user && !user.__ipBloqueado) { req.dashUser = user; return next(); }
+  // Visitante — criar user temporário para renderização
+  req.dashUser = { cargo: 'cliente', username: 'Visitante', discord_id: null, __visitante: true };
+  next();
+}, (req, res) => {
   const { db } = getMainDb();
   const user   = req.dashUser;
   const search = req.query.q   || '';
@@ -375,7 +396,12 @@ router.get('/loja', auth.middlewareAba('loja'), (req, res) => {
   res.send(layout(user, '🛍️ Loja', body, 'loja'));
 });
 
-router.get('/loja/comprar/:produtoId', auth.middlewareAba('loja'), (req, res) => {
+router.get('/loja/comprar/:produtoId', (req, res, next) => {
+  const user = auth.getSessao(auth.getToken(req), dashDb.getIp(req));
+  if (user && !user.__ipBloqueado) { req.dashUser = user; return next(); }
+  // Visitante tentando comprar — redirecionar para cadastro com aviso
+  return res.redirect('/painel/cadastro?ref=compra');
+}, auth.middlewareAba('loja'), (req, res) => {
   const { db } = getMainDb();
   const user   = req.dashUser;
   const prod   = db.prepare('SELECT * FROM produtos WHERE id=? AND ativo=1').get(req.params.produtoId);
