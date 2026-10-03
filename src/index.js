@@ -204,6 +204,30 @@ client.once('ready', async () => {
     // Painel 2FA fixo no canal
     const { enviarPainel2FA } = require('./systems/painel2FA');
     enviarPainel2FA(client).catch(() => {});
+
+    // Atualizar painel de tickets imediatamente (fora do setTimeout)
+    setTimeout(async () => {
+      try {
+        const { buildTicketPanel } = require('./tickets/panelBuilder');
+        const CANAL_TICKETS_PAINEL = '1522587244614127676';
+        const canalTicket = guild?.channels.cache.get(CANAL_TICKETS_PAINEL)
+          || await client.channels.fetch(CANAL_TICKETS_PAINEL).catch(() => null);
+        if (!canalTicket) { console.warn('[Tickets Panel] Canal não encontrado:', CANAL_TICKETS_PAINEL); return; }
+
+        const msgs = await canalTicket.messages.fetch({ limit: 50 }).catch(() => null);
+        const msgTicket = msgs?.find(m => m.author.id === client.user.id && m.components?.length > 0);
+
+        if (msgTicket) {
+          await msgTicket.edit(buildTicketPanel());
+          console.log('[Tickets Panel] ✅ Painel de tickets editado com sucesso!');
+        } else {
+          const msg = await canalTicket.send(buildTicketPanel());
+          console.log('[Tickets Panel] ✅ Novo painel de tickets postado:', msg.id);
+        }
+      } catch (e) {
+        console.error('[Tickets Panel] ❌ Erro:', e.message);
+      }
+    }, 5000);
     // Cache de convites para sistema de indicações
     try {
       const invites = await guild.invites.fetch().catch(() => null);

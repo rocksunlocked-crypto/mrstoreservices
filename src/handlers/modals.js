@@ -302,6 +302,15 @@ module.exports = async (interaction, client) => {
     } catch (err) {
       console.error('[Avaliação Webhook]', err.message);
     }
+    // Enviar também no canal central de avaliações via bot
+    try {
+      const clientRef = require('../utils/clientRef');
+      const cl = clientRef.getClient();
+      if (cl) {
+        const canal = await cl.channels.fetch('1544558778261835846').catch(() => null);
+        if (canal) await canal.send({ embeds: [embed] }).catch(() => {});
+      }
+    } catch {}
   }
 
   // ── Modal de compra com cupom ─────────────────────────────────────────────

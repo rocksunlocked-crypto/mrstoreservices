@@ -165,6 +165,30 @@ async function handleButton(interaction) {
     db.updateTicket(ticketId, { rating });
     if (ticket.claimed_by) db.updateStaffRating(ticket.claimed_by, ticket.claimed_by, rating);
     const labels = { 1: 'Péssimo 😞', 2: 'Ruim 😕', 3: 'Regular 😐', 4: 'Bom 😊', 5: 'Excelente 🤩' };
+
+    // Postar avaliação no canal central
+    try {
+      const clientRef = require('../utils/clientRef');
+      const cl = clientRef.getClient();
+      if (cl) {
+        const canal = await cl.channels.fetch('1544558778261835846').catch(() => null);
+        if (canal) {
+          const embedAval = new EmbedBuilder()
+            .setColor(rating >= 4 ? config.colors.success : rating === 3 ? config.colors.warning : config.colors.danger)
+            .setTitle('⭐ Avaliação de Ticket')
+            .addFields(
+              { name: '👤 Usuário',   value: `<@${interaction.user.id}>`, inline: true },
+              { name: '⭐ Nota',      value: `${'⭐'.repeat(rating)} (${rating}/5)`, inline: true },
+              { name: '🎫 Ticket',    value: `\`${ticketId}\``, inline: true },
+              { name: '📝 Avaliação', value: labels[rating], inline: true },
+              { name: '✋ Atendente', value: ticket.claimed_by ? `\`${ticket.claimed_by}\`` : 'Nenhum', inline: true },
+            )
+            .setTimestamp();
+          await canal.send({ embeds: [embedAval] }).catch(() => {});
+        }
+      }
+    } catch {}
+
     return interaction.update({
       embeds: [new EmbedBuilder()
         .setColor(rating >= 4 ? config.colors.success : rating === 3 ? config.colors.warning : config.colors.danger)

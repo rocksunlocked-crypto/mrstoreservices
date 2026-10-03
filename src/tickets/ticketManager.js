@@ -144,16 +144,30 @@ async function openTicket(interaction, category, subject, extraFields = []) {
   const member = await guild.members.fetch(user.id).catch(() => null);
   if (member) sendOpenConfirmDM(member, ticketObj);
 
+  const { ActionRowBuilder: AR, ButtonBuilder: BB, ButtonStyle: BS } = require('discord.js');
   await interaction.editReply({
     embeds: [new EmbedBuilder()
       .setColor(config.colors.success)
-      .setTitle('✅ Ticket Criado!')
-      .setDescription(`Seu ticket foi aberto em ${channel}!\n\n> Descreva sua situação com detalhes.\n> Nossa equipe irá te atender em breve.`)
+      .setTitle('🎫 Ticket Aberto!')
+      .setDescription([
+        `> Seu ticket foi criado com sucesso em ${channel}!`,
+        `> Nossa equipe irá te atender em breve.`,
+        ``,
+        `> ⚠️ **Não abra múltiplos tickets** para o mesmo assunto.`,
+      ].join('\n'))
       .addFields(
-        { name: '🎫 ID', value: `\`${ticketId}\``, inline: true },
-        { name: '📂 Categoria', value: getCategoryName(category), inline: true },
+        { name: '🆔 ID',        value: `\`${ticketId.slice(0,8).toUpperCase()}\``, inline: true },
+        { name: '📂 Categoria', value: getCategoryName(category),                  inline: true },
+        { name: '📋 Assunto',   value: subject || 'Sem assunto',                   inline: false },
       )
+      .setFooter({ text: 'Máximo Store • Sistema de Tickets' })
       .setTimestamp()],
+    components: [new AR().addComponents(
+      new BB()
+        .setLabel('🎫 Ir para o Ticket')
+        .setStyle(BS.Link)
+        .setURL(`https://discord.com/channels/${guild.id}/${channel.id}`),
+    )],
   });
 }
 
