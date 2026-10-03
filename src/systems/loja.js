@@ -180,9 +180,9 @@ async function iniciarCompra(interaction, produtoId, cupomCodigo = null) {
         .setFooter({ text: 'Máximo Store • Ticket de Compra' })],
       components: [new ActionRowBuilder().addComponents(
         new ButtonBuilder()
-          .setLabel('🎫 Ir para o Ticket')
+          .setLabel('🛒 Ver Carrinho')
           .setStyle(ButtonStyle.Link)
-          .setURL(`https://discord.com/channels/${interaction.guild?.id}/${canal.id}`),
+          .setURL(`https://discord.com/channels/${interaction.guild?.id}/${interaction.channelId}`),
       )],
     });
   } else {
@@ -299,7 +299,7 @@ async function pagarComCoins(interaction, pedidoId, client) {
   const notaOriginal = (() => { try { return pedido.nota_fiscal ? JSON.parse(pedido.nota_fiscal) : null; } catch { return null; } })();
   const notaNova     = { tipo: notaOriginal?.tipo || 'coins_pagamento', ...notaOriginal, coinsUsados: coinsNecessarios };
 
-  db.prepare("UPDATE pedidos SET status='pago', pago_em=strftime('%s','now'), nota_fiscal=? WHERE id=?")
+  db.prepare("UPDATE pedidos SET status='pago', metodo_pag='Coins', pago_em=strftime('%s','now'), nota_fiscal=? WHERE id=?")
     .run(JSON.stringify(notaNova), pedidoId);
 
   marcarGrupoPago(pedido);
@@ -449,9 +449,9 @@ async function iniciarCompraVariante(interaction, varianteId, client, cupomCodig
         .setFooter({ text: 'Máximo Store • Ticket de Compra' })],
       components: [new ActionRowBuilder().addComponents(
         new ButtonBuilder()
-          .setLabel('🎫 Ir para o Ticket')
+          .setLabel('🛒 Ver Carrinho')
           .setStyle(ButtonStyle.Link)
-          .setURL(`https://discord.com/channels/${interaction.guild?.id}/${canal.id}`),
+          .setURL(`https://discord.com/channels/${interaction.guild?.id}/${interaction.channelId}`),
       )],
     });
   } else {
@@ -741,6 +741,7 @@ async function entregarProduto(pedido, client) {
     // ── Log de compra no canal de logs ────────────────────────────────────────
     try {
       const { log: logMr } = require('../menu/logsHandler');
+      const metodoDisplay = pedido.metodo_pag || 'PIX';
       logMr(client, guild, 'compra', {
         acao: '🛍️ Compra Realizada',
         alvo: `<@${pedido.usuario_id}>`,
@@ -749,7 +750,7 @@ async function entregarProduto(pedido, client) {
           `**Quantidade:** ${pedido.quantidade}`,
           `**Valor:** R$ ${pedido.valor_total.toFixed(2)}`,
           `**Pedido:** \`${pedido.id.slice(0,8).toUpperCase()}\``,
-          `**Método:** ${pedido.metodo_pag || 'PIX'}`,
+          `**Método:** ${metodoDisplay}`,
         ].join('\n'),
       });
     } catch {}
@@ -1078,9 +1079,9 @@ async function iniciarCompraCarrinho(interaction, client) {
         .setFooter({ text: 'Máximo Store • Carrinho' })],
       components: [new ActionRowBuilder().addComponents(
         new ButtonBuilder()
-          .setLabel('🎫 Ir para o Ticket')
+          .setLabel('🛒 Ver Carrinho')
           .setStyle(ButtonStyle.Link)
-          .setURL(`https://discord.com/channels/${interaction.guild?.id}/${canal.id}`),
+          .setURL(`https://discord.com/channels/${interaction.guild?.id}/${interaction.channelId}`),
       )],
     });
   }
