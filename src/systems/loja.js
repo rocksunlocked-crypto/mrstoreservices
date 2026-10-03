@@ -474,6 +474,7 @@ async function entregarProduto(pedido, client) {
     if (!produto) return;
 
     let conteudo = null;
+    let estoqueInfinito = false; // Flag para bloquear fallback
 
     if (produto.tipo === 'digital') {
       // Variante primeiro
@@ -488,6 +489,7 @@ async function entregarProduto(pedido, client) {
         if (variante?.infinito) {
           // Estoque infinito — entrega manual via ticket
           conteudo = '⚠️ ABRIR TICKET PRA RESGATAR';
+          estoqueInfinito = true; // Bloquear fallback
         } else {
           // Estoque normal — pegar do banco
           const { pegarItemVariante } = require('./painelProduto');
@@ -502,8 +504,8 @@ async function entregarProduto(pedido, client) {
         }
       }
 
-      // Fallback estoque global (se não tem conteúdo ainda)
-      if (!conteudo || conteudo === null) {
+      // Fallback estoque global (apenas se NÃO for estoque infinito)
+      if (!estoqueInfinito && (!conteudo || conteudo === null)) {
         const itens = [];
         for (let i = 0; i < qtd; i++) {
           const item = db.prepare('SELECT * FROM estoque_digital WHERE produto_id=? AND usado=0 LIMIT 1').get(produto.id);
@@ -522,7 +524,11 @@ async function entregarProduto(pedido, client) {
           conteudo = '⚠️ Entrega manual — nossa equipe entrará em contato via ticket.';
           db.prepare('UPDATE produtos SET vendas=vendas+1 WHERE id=?').run(produto.id);
         }
-      } else {
+      } else if (conteudo && conteudo !== '⚠️ ABRIR TICKET PRA RESGATAR') {
+        // Variante normal com estoque — incrementar vendas
+        db.prepare('UPDATE produtos SET vendas=vendas+? WHERE id=?').run(qtd, produto.id);
+      } else if (estoqueInfinito) {
+        // Estoque infinito — incrementar vendas
         db.prepare('UPDATE produtos SET vendas=vendas+? WHERE id=?').run(qtd, produto.id);
       }
     } else {
