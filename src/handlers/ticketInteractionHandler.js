@@ -405,7 +405,7 @@ async function handleButton(interaction) {
         new TextInputBuilder().setCustomId('pix_produto').setLabel('Nome do produto / serviço').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(100),
       ),
       new ActionRowBuilder().addComponents(
-        new TextInputBuilder().setCustomId('pix_valor').setLabel('Valor total (R$)').setStyle(TextInputStyle.Short).setRequired(true).setPlaceholder('Ex: 29.90'),
+        new TextInputBuilder().setCustomId('pix_valor').setLabel('Valor total (R$)').setStyle(TextInputStyle.Short).setRequired(true).setPlaceholder('Ex: 29.90 ou 23').setMinLength(1).setMaxLength(12),
       ),
     );
     return interaction.showModal(modal);
@@ -666,7 +666,6 @@ async function gerarPixAdmin(interaction, ticketId, produto, valorTotal) {
       descricao: `${produto} — Ticket ${ticketId}`,
       pedidoId,
     });
-
     const qr        = await efi.gerarQRCode(cobr.locId);
     const expiraPix = Math.floor(Date.now() / 1000) + 1800;
 
