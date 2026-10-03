@@ -401,10 +401,12 @@ module.exports = {
     // IMPORTANTE: Este comando DEVE vir ANTES do !recuperar para evitar conflito
     if (message.content.toLowerCase().startsWith('!recuperar-variante')) {
       const args = message.content.trim().split(/\s+/);
-      if (args.length < 2) return message.reply('Uso: `!recuperar-variante <variante_id> [horas=3]`\nExemplo: `!recuperar-variante 09752ecc 3`');
+      if (args.length < 2) return message.reply('Uso: `!recuperar-variante <variante_id> <horas>`\nExemplo: `!recuperar-variante 09752ecc 3` — devolve itens adicionados há 3h');
       
       const varianteId = args[1];
-      const horas = parseInt(args[2]) || 3;
+      const horas = parseFloat(args[2]);
+      if (!horas || horas <= 0) return message.reply('❌ Informe um tempo válido em horas (ex: 3, 0.5, 24)');
+      
       const { db } = require('../database/database');
       
       // Buscar variante
@@ -412,49 +414,72 @@ module.exports = {
       if (!variantes.length) return message.reply(`❌ Variante \`${varianteId}\` não encontrada.`);
       const variante = variantes[0];
       
-      // Calcular timestamp (agora - N horas)
-      const tempoLimite = Math.floor(Date.now() / 1000) - (horas * 3600);
+      // Calcular timestamp EXATO (agora - N horas) com margem de ±5min
+      const agora = Math.floor(Date.now() / 1000);
+      const tempoAlvo = agora - (horas * 3600);
+      const margemSegundos = 5 * 60; // ±5 minutos
+      const tempoMin = tempoAlvo - margemSegundos;
+      const tempoMax = tempoAlvo + margemSegundos;
       
-      // Buscar itens consumidos da variante nas últimas N horas
-      const itensConsumidos = db.prepare(`
+      // Buscar itens criados há ~X horas na tabela estoque_variante
+      const itensVariante = db.prepare(`
+        SELECT * FROM estoque_variante 
+        WHERE variante_id=? AND criado_em >= ? AND criado_em <= ?
+        ORDER BY criado_em ASC
+      `).all(variante.id, tempoMin, tempoMax);
+      
+      // Também buscar no estoque_digital (caso antigo)
+      const itensGlobal = db.prepare(`
         SELECT * FROM estoque_digital 
-        WHERE variante_id=? AND usado=1 AND usado_em >= ?
-        ORDER BY usado_em DESC
-      `).all(variante.id, tempoLimite);
+        WHERE variante_id=? AND criado_em >= ? AND criado_em <= ?
+        ORDER BY criado_em ASC
+      `).all(variante.id, tempoMin, tempoMax);
       
-      if (!itensConsumidos.length) {
-        return message.reply(`❌ Nenhum item consumido da variante **${variante.nome}** nas últimas **${horas}h**.`);
+      const todosItens = [...itensVariante, ...itensGlobal];
+      
+      if (!todosItens.length) {
+        const dataAlvo = new Date((agora - horas * 3600) * 1000).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+        return message.reply(`❌ Nenhum item da variante **${variante.nome}** foi adicionado há **${horas}h** (por volta de ${dataAlvo})`);
       }
       
-      // Devolver todos os itens ao estoque
+      // Devolver todos os itens ao estoque (marcar como não usado)
       let devolvidos = 0;
-      for (const item of itensConsumidos) {
-        db.prepare('UPDATE estoque_digital SET usado=0, usado_por=NULL, usado_em=NULL, pedido_id=NULL WHERE id=?').run(item.id);
+      for (const item of todosItens) {
+        if (item.variante_id) {
+          // Item do estoque_variante
+          db.prepare('UPDATE estoque_variante SET usado=0, usado_por=NULL, usado_em=NULL, pedido_id=NULL WHERE id=?').run(item.id);
+        } else {
+          // Item do estoque_digital
+          db.prepare('UPDATE estoque_digital SET usado=0, usado_por=NULL, usado_em=NULL, pedido_id=NULL WHERE id=?').run(item.id);
+        }
         devolvidos++;
       }
       
       // Atualizar contador de estoque do produto
-      const estoqueTotal = db.prepare('SELECT COUNT(*) as c FROM estoque_digital WHERE produto_id=? AND usado=0').get(variante.produto_id).c;
+      const estoqueVariante = db.prepare('SELECT COUNT(*) as c FROM estoque_variante WHERE variante_id=? AND usado=0').get(variante.id).c;
+      const estoqueGlobal = db.prepare('SELECT COUNT(*) as c FROM estoque_digital WHERE produto_id=? AND usado=0').get(variante.produto_id).c;
+      const estoqueTotal = estoqueVariante + estoqueGlobal;
       db.prepare('UPDATE produtos SET estoque=? WHERE id=?').run(estoqueTotal, variante.produto_id);
       
       const embed = new EmbedBuilder()
         .setColor(0x00FF88)
-        .setTitle('♻️ Itens Recuperados')
+        .setTitle('♻️ Itens Recuperados pelo Timestamp')
         .setDescription([
           `✅ **${devolvidos} item(ns)** devolvido(s) ao estoque!`,
           ``,
           `📦 **Variante:** ${variante.nome}`,
-          `⏰ **Período:** últimas ${horas}h`,
+          `⏰ **Adicionados há:** ${horas}h`,
           `📊 **Estoque atual:** ${estoqueTotal} itens disponíveis`,
         ].join('\n'))
         .setTimestamp();
       
       // Mostrar preview dos itens recuperados (primeiros 5)
       if (devolvidos > 0) {
-        const preview = itensConsumidos.slice(0, 5).map((item, i) => {
-          const usadoEm = new Date(item.usado_em * 1000).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+        const preview = todosItens.slice(0, 5).map((item, i) => {
+          const criadoEm = new Date(item.criado_em * 1000).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
           const conteudoPreview = item.conteudo.slice(0, 30) + (item.conteudo.length > 30 ? '...' : '');
-          return `\`${i+1}.\` \`${conteudoPreview}\` (usado em ${usadoEm})`;
+          const status = item.usado ? '🔴 estava usado' : '🟢 estava livre';
+          return `\`${i+1}.\` \`${conteudoPreview}\` (${status})\n    📅 Adicionado: ${criadoEm}`;
         }).join('\n');
         embed.addFields({ name: '🔍 Preview dos Itens', value: preview + (devolvidos > 5 ? `\n... e mais ${devolvidos - 5}` : ''), inline: false });
       }

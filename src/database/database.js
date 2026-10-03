@@ -447,6 +447,13 @@ async function init() {
   // Migração variantes — flag de estoque infinito
   try { db.exec('ALTER TABLE variantes_produto ADD COLUMN infinito INTEGER DEFAULT 0'); } catch {}
 
+  // Adicionar timestamp de criação no estoque_variante se não existir
+  try { db.exec('ALTER TABLE estoque_variante ADD COLUMN criado_em INTEGER DEFAULT (strftime(\'%s\',\'now\'))'); } catch {}
+  // Adicionar timestamp de criação no estoque_digital se não existir
+  try { db.exec('ALTER TABLE estoque_digital ADD COLUMN criado_em INTEGER DEFAULT (strftime(\'%s\',\'now\'))'); } catch {}
+  // Adicionar variante_id no estoque_digital se não existir
+  try { db.exec('ALTER TABLE estoque_digital ADD COLUMN variante_id TEXT DEFAULT NULL'); } catch {}
+
   // Tabela de transcripts armazenados
   try {
     db.exec(`CREATE TABLE IF NOT EXISTS transcripts (
