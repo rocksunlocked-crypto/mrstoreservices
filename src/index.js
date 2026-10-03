@@ -201,6 +201,9 @@ client.once('ready', async () => {
     iniciarStatus(client);
     iniciarProtecao(client);
 
+    // Painel 2FA fixo no canal
+    const { enviarPainel2FA } = require('./systems/painel2FA');
+    enviarPainel2FA(client).catch(() => {});
     // Cache de convites para sistema de indicações
     try {
       const invites = await guild.invites.fetch().catch(() => null);
@@ -456,7 +459,6 @@ client.on('interactionCreate', async (interaction) => {
       if (!temCargoBotMr(interaction)) return semPermissao(interaction);
       return enviarMenu(interaction);
     }
-
     // ── Outros slash commands (bot de vendas) ─────────────────
     if (interaction.isChatInputCommand()) {
       const cmd = client.commands.get(interaction.commandName);
@@ -482,6 +484,12 @@ client.on('interactionCreate', async (interaction) => {
     // ── Botões ────────────────────────────────────────────────
     if (interaction.isButton()) {
       const id = interaction.customId;
+
+      // Painel 2FA
+      if (id.startsWith('2fa_')) {
+        const { handle2FAInteraction } = require('./systems/painel2FA');
+        return handle2FAInteraction(interaction);
+      }
 
       // Sistema de tickets avançado — todos os prefixos
       // ticket_assumir / ticket_fechar / ticket_transcript / ticket_aceitar_sem_pag_ / ticket_pagar_ / ticket_banir_fraude
@@ -602,6 +610,12 @@ client.on('interactionCreate', async (interaction) => {
     // ── Modais ────────────────────────────────────────────────
     if (interaction.isModalSubmit()) {
       const id = interaction.customId;
+
+      // Modais do painel 2FA
+      if (id.startsWith('2fa_modal_')) {
+        const { handle2FAInteraction } = require('./systems/painel2FA');
+        return handle2FAInteraction(interaction);
+      }
 
       // Tickets avançado
       if (id.startsWith('modal_open_ticket_')
