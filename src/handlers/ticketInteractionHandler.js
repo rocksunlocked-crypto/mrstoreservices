@@ -522,6 +522,18 @@ async function chamarStaffViaPix(interaction, ticket, ticketId) {
     }
 
     console.log('[STAFF PIX 8] Construindo embed... imagemQr:', imagemQr ? 'sim' : 'nao');
+
+    // Gerar QR Code como buffer de imagem usando o pacote qrcode (igual ao carrinho)
+    let qrBuf = null;
+    const qrCodeEMV = (await efi.gerarQRCode(cobr.locId).catch(() => null))?.qrcode || pixCopiaCola;
+    try {
+      const QRCode = require('qrcode');
+      qrBuf = await QRCode.toBuffer(qrCodeEMV, { width: 300, margin: 2 });
+      console.log('[STAFF PIX 8a] QR buffer gerado, tamanho:', qrBuf?.length);
+    } catch (qrBufErr) {
+      console.warn('[STAFF PIX 8b] Falha ao gerar QR buffer:', qrBufErr.message);
+    }
+
     const embed = new EmbedBuilder()
       .setColor(config.colors.pix)
       .setTitle('📞 Chamar Staff — PIX R$ 1,00')
@@ -532,11 +544,11 @@ async function chamarStaffViaPix(interaction, ticket, ticketId) {
         `⏱️ QR Code válido por **30 minutos**.`,
         `📋 Pix Copia e Cola abaixo:`,
       ].join('\n'))
-      .addFields({ name: '📋 Pix Copia e Cola', value: `\`\`\`${pixCopiaCola}\`\`\`` })
+      .addFields({ name: '📋 Pix Copia e Cola', value: `\`\`\`${qrCodeEMV.slice(0, 200)}\`\`\`` })
       .setFooter({ text: `Ticket ${ticketId} • Gerado em ${new Date().toLocaleTimeString('pt-BR')}` })
       .setTimestamp();
 
-    if (imagemQr) embed.setImage(imagemQr);
+    if (qrBuf) embed.setImage('attachment://qrcode.png');
     console.log('[STAFF PIX 9] Embed construído');
 
     const row = new ActionRowBuilder().addComponents(
@@ -560,7 +572,11 @@ async function chamarStaffViaPix(interaction, ticket, ticketId) {
     iniciarPollingChamada(cobr.txid, ticketId, interaction);
     console.log('[STAFF PIX 12] Polling iniciado, chamando editReply...');
 
-    const result = await interaction.editReply({ embeds: [embed], components: [row] });
+    const { AttachmentBuilder } = require('discord.js');
+    const payload = { embeds: [embed], components: [row] };
+    if (qrBuf) payload.files = [new AttachmentBuilder(qrBuf, { name: 'qrcode.png' })];
+
+    const result = await interaction.editReply(payload);
     console.log('[STAFF PIX 13] editReply concluído com sucesso! msgId:', result?.id);
     return result;
   } catch (err) {
