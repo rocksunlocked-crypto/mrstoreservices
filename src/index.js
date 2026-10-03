@@ -239,6 +239,18 @@ client.once('ready', async () => {
       { body: cmds },
     );
     console.log(`✅ ${cmds.length} slash commands registrados automaticamente.`);
+
+    // Resetar permissões de TODOS os comandos para padrão (sem restrição por cargo)
+    // Isso sobrescreve qualquer configuração manual no servidor
+    try {
+      await rest.put(
+        Routes.guildApplicationCommandsPermissions(process.env.CLIENT_ID, process.env.GUILD_ID),
+        { body: [] }, // [] = remove todas as permissões customizadas, volta ao padrão do comando
+      );
+      console.log('✅ Permissões de comandos resetadas para padrão.');
+    } catch (pe) {
+      console.warn('[Deploy Perms]', pe.message);
+    }
   } catch (e) {
     console.error('[Deploy Commands]', e.message);
   }
