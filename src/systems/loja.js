@@ -475,13 +475,13 @@ async function entregarProduto(pedido, client) {
 
     let conteudo = null;
     let estoqueInfinito = false; // Flag para bloquear fallback
+    const qtd = Math.max(1, parseInt(pedido.quantidade) || 1); // Declarar no início
 
     if (produto.tipo === 'digital') {
       // Variante primeiro
       let notaFiscal = null;
       try { notaFiscal = pedido.nota_fiscal ? JSON.parse(pedido.nota_fiscal) : null; } catch {}
       const varianteId = notaFiscal?.varianteId;
-      const qtd = Math.max(1, parseInt(pedido.quantidade) || 1);
 
       if (varianteId) {
         // Verificar se a variante tem flag infinito=1
@@ -532,7 +532,7 @@ async function entregarProduto(pedido, client) {
         db.prepare('UPDATE produtos SET vendas=vendas+? WHERE id=?').run(qtd, produto.id);
       }
     } else {
-      const qtd = Math.max(1, parseInt(pedido.quantidade) || 1);
+      // Produto físico
       if (produto.estoque > 0) db.prepare('UPDATE produtos SET estoque=estoque-?,vendas=vendas+? WHERE id=?').run(qtd, qtd, produto.id);
       conteudo = 'Produto físico — entrega combinada via ticket.';
     }
