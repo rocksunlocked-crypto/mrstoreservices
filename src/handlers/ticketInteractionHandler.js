@@ -526,9 +526,10 @@ async function chamarStaffViaPix(interaction, ticket, ticketId) {
         `📋 Pix Copia e Cola abaixo:`,
       ].join('\n'))
       .addFields({ name: '📋 Pix Copia e Cola', value: `\`\`\`${pixCopiaCola}\`\`\`` })
-      .setImage(imagemQr)
       .setFooter({ text: `Ticket ${ticketId} • Gerado em ${new Date().toLocaleTimeString('pt-BR')}` })
       .setTimestamp();
+
+    if (imagemQr) embed.setImage(imagemQr);
 
     const row = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
