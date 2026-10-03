@@ -289,15 +289,36 @@ client.once('ready', async () => {
       try {
         const { buildTicketPanel } = require('./tickets/panelBuilder');
         const { db: dbMain } = require('./database/database');
-        const painelTicket = dbMain.prepare("SELECT * FROM paineis_canal WHERE produto_id='ticket_panel' LIMIT 1").get();
-        if (painelTicket?.mensagem_id && painelTicket?.canal_id) {
-          const canalTicket = guild.channels.cache.get(painelTicket.canal_id)
-            || await client.channels.fetch(painelTicket.canal_id).catch(() => null);
-          if (canalTicket) {
-            const msgTicket = await canalTicket.messages.fetch(painelTicket.mensagem_id).catch(() => null);
-            if (msgTicket) {
-              await msgTicket.edit(buildTicketPanel()).catch(() => {});
-              console.log('[Tickets] ✅ Painel de tickets atualizado com novas opções.');
+
+        // Buscar canal de tickets configurado
+        const canalTicketId = config.channels.ticketPanel;
+        const canalTicket = guild.channels.cache.get(canalTicketId)
+          || await client.channels.fetch(canalTicketId).catch(() => null);
+
+        if (canalTicket) {
+          // Tentar pelo banco primeiro
+          const painelTicket = dbMain.prepare("SELECT * FROM paineis_canal WHERE produto_id='ticket_panel' LIMIT 1").get();
+          let msgTicket = null;
+
+          if (painelTicket?.mensagem_id) {
+            msgTicket = await canalTicket.messages.fetch(painelTicket.mensagem_id).catch(() => null);
+          }
+
+          // Se não achou no banco, buscar última mensagem do bot no canal
+          if (!msgTicket) {
+            const msgs = await canalTicket.messages.fetch({ limit: 20 }).catch(() => null);
+            msgTicket = msgs?.find(m => m.author.id === client.user.id && m.components?.length > 0);
+          }
+
+          if (msgTicket) {
+            await msgTicket.edit(buildTicketPanel()).catch(e => console.error('[Tickets Panel Edit]', e.message));
+            console.log('[Tickets] ✅ Painel de tickets atualizado com novas opções.');
+          } else {
+            // Não encontrou — postar novo
+            const msg = await canalTicket.send(buildTicketPanel()).catch(() => null);
+            if (msg) {
+              try { dbMain.prepare("INSERT OR REPLACE INTO paineis_canal (id, canal_id, produto_id, mensagem_id, titulo, criado_por) VALUES (?,?,?,?,?,?)").run(require('uuid').v4(), canalTicketId, 'ticket_panel', msg.id, 'Painel de Tickets', 'sistema'); } catch {}
+              console.log('[Tickets] ✅ Novo painel de tickets postado.');
             }
           }
         }
