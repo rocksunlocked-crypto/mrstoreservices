@@ -666,6 +666,15 @@ client.on('interactionCreate', async (interaction) => {
         if (fs.existsSync(modalsHandler)) return require(modalsHandler)(interaction, client);
       }
 
+      // Modais do sistema de tickets avançado (PIX admin, PIX chamada, nota, rename, etc.)
+      if (id.startsWith('modal_pix_admin_')
+        || id.startsWith('modal_pix_chamada_')
+        || id.startsWith('modal_close_ticket_')
+        || id.startsWith('modal_note_')
+        || id.startsWith('modal_rename_')) {
+        return handleTicketInteraction(interaction);
+      }
+
       // Outros modais Bot Mr
       if (!temCargoBotMr(interaction)) return semPermissao(interaction);
       switch (id) {
