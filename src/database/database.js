@@ -414,6 +414,7 @@ async function init() {
       descricao   TEXT,
       preco       REAL NOT NULL,
       estoque     INTEGER DEFAULT -1,
+      infinito    INTEGER DEFAULT 0,
       ativo       INTEGER DEFAULT 1,
       ordem       INTEGER DEFAULT 0,
       criado_em   INTEGER DEFAULT (strftime('%s','now')),
@@ -443,6 +444,8 @@ async function init() {
 
   // Migração variantes — data de ultima atualização de estoque
   try { db.exec('ALTER TABLE variantes_produto ADD COLUMN estoque_atualizado_em INTEGER DEFAULT NULL'); } catch {}
+  // Migração variantes — flag de estoque infinito
+  try { db.exec('ALTER TABLE variantes_produto ADD COLUMN infinito INTEGER DEFAULT 0'); } catch {}
 
   // Tabela de transcripts armazenados
   try {

@@ -379,8 +379,10 @@ function montarComponentes(variantes, painelId) {
   const fs        = getFlashSale(produtoId);
 
   const options = variantesOrdenadas.slice(0, 25).map(v => {
-    const qtd        = isCoins ? null : (db.prepare('SELECT COUNT(*) as c FROM estoque_variante WHERE variante_id=? AND usado=0').get(v.id)?.c || 0);
-    const temEstoque = isCoins || qtd > 0;
+    // Se variante tem flag infinito=1, sempre mostra 67 unidades
+    const qtdReal    = isCoins ? null : (db.prepare('SELECT COUNT(*) as c FROM estoque_variante WHERE variante_id=? AND usado=0').get(v.id)?.c || 0);
+    const qtd        = v.infinito ? 67 : qtdReal;
+    const temEstoque = isCoins || v.infinito || qtdReal > 0;
 
     // Preço com flash sale aplicado
     const precoBase = Number(v.preco);

@@ -483,17 +483,24 @@ async function entregarProduto(pedido, client) {
       const qtd = Math.max(1, parseInt(pedido.quantidade) || 1);
 
       if (varianteId) {
-        const { pegarItemVariante } = require('./painelProduto');
-        // Pegar N itens conforme a quantidade do pedido
-        const itens = [];
-        for (let i = 0; i < qtd; i++) {
-          const item = pegarItemVariante(varianteId, pedido.usuario_id, pedido.id);
-          if (item) itens.push(item);
-          else break; // sem mais estoque
-        }
-        conteudo = itens.length > 0 ? itens.join('\n') : null;
-        if (!conteudo && itens.length === 0) {
-          conteudo = '⚠️ Entrega manual — nossa equipe entrará em contato via ticket.';
+        // Verificar se a variante tem flag infinito=1
+        const variante = db.prepare('SELECT infinito FROM variantes_produto WHERE id=?').get(varianteId);
+        if (variante?.infinito) {
+          // Estoque infinito — entrega manual via ticket
+          conteudo = '⚠️ ABRIR TICKET PRA RESGATAR';
+        } else {
+          // Estoque normal — pegar do banco
+          const { pegarItemVariante } = require('./painelProduto');
+          const itens = [];
+          for (let i = 0; i < qtd; i++) {
+            const item = pegarItemVariante(varianteId, pedido.usuario_id, pedido.id);
+            if (item) itens.push(item);
+            else break;
+          }
+          conteudo = itens.length > 0 ? itens.join('\n') : null;
+          if (!conteudo && itens.length === 0) {
+            conteudo = '⚠️ Entrega manual — nossa equipe entrará em contato via ticket.';
+          }
         }
       }
 
@@ -602,7 +609,7 @@ async function entregarProduto(pedido, client) {
       .setTimestamp()
       .setFooter({ text: t('delivery_footer', idioma) });
 
-    if (conteudo && conteudo !== '⚠️ Entrega manual — nossa equipe entrará em contato via ticket.') {
+    if (conteudo && conteudo !== '⚠️ Entrega manual — nossa equipe entrará em contato via ticket.' && conteudo !== '⚠️ ABRIR TICKET PRA RESGATAR') {
       // Se quantidade >= 10, salvar como arquivo txt e enviar link de download
       if (qtd >= 10) {
         try {
@@ -646,6 +653,12 @@ async function entregarProduto(pedido, client) {
           });
         }
       }
+    } else if (conteudo === '⚠️ ABRIR TICKET PRA RESGATAR') {
+      embed.addFields({
+        name:  '⚠️ Produto Especial',
+        value: '> Este produto requer resgate manual.\n> **Abra um ticket de suporte** para receber.',
+        inline: false,
+      });
     } else if (conteudo) {
       embed.addFields({
         name:  '⚠️ Entrega',
