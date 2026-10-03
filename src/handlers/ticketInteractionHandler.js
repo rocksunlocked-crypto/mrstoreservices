@@ -481,40 +481,41 @@ async function handleModal(interaction) {
 // ────────────────────────────────────────────────────────────────────────────
 
 async function chamarStaffViaPix(interaction, ticket, ticketId) {
-  await interaction.deferReply({ flags: 64 }); // 64 = ephemeral
+  console.log('[STAFF PIX 1] Iniciando chamarStaffViaPix - user:', interaction.user.id, 'ticket:', ticketId);
+  await interaction.deferReply({ flags: 64 });
+  console.log('[STAFF PIX 2] deferReply concluído');
 
   try {
     const efi    = require('../systems/efi');
     const { v4: uuidv4 } = require('uuid');
     const pedidoId = uuidv4();
+    console.log('[STAFF PIX 3] pedidoId gerado:', pedidoId);
 
+    console.log('[STAFF PIX 4] Chamando criarCobrancaPix...');
     const cobr = await efi.criarCobrancaPix({
       valor:       1.00,
       descricao:   `Chamar Staff`,
       pedidoId,
       nomeCliente: interaction.user.username?.slice(0, 50) || 'Cliente',
     });
-    console.log('[Chamar Staff PIX] cobr:', JSON.stringify(cobr));
+    console.log('[STAFF PIX 5] cobr recebido:', JSON.stringify(cobr));
 
-    // Usar location direto — funciona sem precisar do endpoint de QR Code
-    // O location é uma URL pública que qualquer app de banco aceita como Pix Copia e Cola
     const pixCopiaCola = cobr.location || cobr.txid || pedidoId;
-    console.log('[Chamar Staff PIX] pixCopiaCola:', pixCopiaCola);
+    console.log('[STAFF PIX 6] pixCopiaCola:', pixCopiaCola, '| length:', pixCopiaCola?.length);
     let imagemQr = null;
 
-    // Tentar QR Code — mas não é crítico
     if (cobr.locId) {
+      console.log('[STAFF PIX 7] Tentando gerarQRCode locId:', cobr.locId);
       try {
         const qr = await efi.gerarQRCode(cobr.locId);
-        if (qr?.qrcode) {
-          imagemQr = qr.imagemQrcode || null;
-        }
+        console.log('[STAFF PIX 7a] QR retornou:', JSON.stringify({ qrcode: qr?.qrcode?.slice(0,30), imagemQrcode: qr?.imagemQrcode?.slice(0,50) }));
+        if (qr?.qrcode) imagemQr = qr.imagemQrcode || null;
       } catch (qrErr) {
-        console.warn('[Chamar Staff PIX] QR opcional falhou (ignorado):', qrErr.message);
+        console.warn('[STAFF PIX 7b] QR falhou:', qrErr.message);
       }
     }
-    console.log('[Chamar Staff PIX] prosseguindo com embed...');
 
+    console.log('[STAFF PIX 8] Construindo embed... imagemQr:', imagemQr ? 'sim' : 'nao');
     const embed = new EmbedBuilder()
       .setColor(config.colors.pix)
       .setTitle('📞 Chamar Staff — PIX R$ 1,00')
@@ -530,6 +531,7 @@ async function chamarStaffViaPix(interaction, ticket, ticketId) {
       .setTimestamp();
 
     if (imagemQr) embed.setImage(imagemQr);
+    console.log('[STAFF PIX 9] Embed construído');
 
     const row = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
@@ -537,8 +539,8 @@ async function chamarStaffViaPix(interaction, ticket, ticketId) {
         .setLabel('✅ Já paguei — Verificar')
         .setStyle(ButtonStyle.Success),
     );
+    console.log('[STAFF PIX 10] Row construído, customId:', `tverificar_pix_chamada_${cobr.txid}__${ticketId}`);
 
-    // Salvar txid para polling no index
     if (!global._pixChamadas) global._pixChamadas = new Map();
     global._pixChamadas.set(cobr.txid, {
       ticketId,
@@ -547,15 +549,23 @@ async function chamarStaffViaPix(interaction, ticket, ticketId) {
       canal:     interaction.channel,
       criado_em: Date.now(),
     });
+    console.log('[STAFF PIX 11] _pixChamadas salvo');
 
-    // Iniciar polling automático
     iniciarPollingChamada(cobr.txid, ticketId, interaction);
+    console.log('[STAFF PIX 12] Polling iniciado, chamando editReply...');
 
-    return interaction.editReply({ embeds: [embed], components: [row] });
+    const result = await interaction.editReply({ embeds: [embed], components: [row] });
+    console.log('[STAFF PIX 13] editReply concluído com sucesso! msgId:', result?.id);
+    return result;
   } catch (err) {
-    console.error('[Chamar Staff PIX]', err.message);
-    console.error('[Chamar Staff PIX] stack:', err.stack?.split('\n')[0]);
-    return interaction.editReply({ embeds: [errorEmbed(`Erro ao gerar PIX: ${err.message}`)] });
+    console.error('[STAFF PIX ERR] message:', err.message);
+    console.error('[STAFF PIX ERR] stack completo:\n', err.stack);
+    console.error('[STAFF PIX ERR] rawError:', JSON.stringify(err.rawError || err.body || ''));
+    try {
+      return await interaction.editReply({ embeds: [errorEmbed(`Erro ao gerar PIX: ${err.message}`)] });
+    } catch (e2) {
+      console.error('[STAFF PIX ERR] Falha no editReply de erro também:', e2.message);
+    }
   }
 }
 
