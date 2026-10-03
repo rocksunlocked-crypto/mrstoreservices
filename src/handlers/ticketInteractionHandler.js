@@ -162,41 +162,25 @@ async function handleButton(interaction) {
     if (!ticket) return interaction.reply({ embeds: [errorEmbed('Ticket não encontrado.')], ephemeral: true });
     if (ticket.rating) return interaction.reply({ embeds: [errorEmbed('Você já avaliou este ticket.')], ephemeral: true });
     if (ticket.user_id !== interaction.user.id) return interaction.reply({ embeds: [errorEmbed('Apenas o dono pode avaliar.')], ephemeral: true });
-    db.updateTicket(ticketId, { rating });
-    if (ticket.claimed_by) db.updateStaffRating(ticket.claimed_by, ticket.claimed_by, rating);
-    const labels = { 1: 'Péssimo 😞', 2: 'Ruim 😕', 3: 'Regular 😐', 4: 'Bom 😊', 5: 'Excelente 🤩' };
 
-    // Postar avaliação no canal central
-    try {
-      const clientRef = require('../utils/clientRef');
-      const cl = clientRef.getClient();
-      if (cl) {
-        const canal = await cl.channels.fetch('1544558778261835846').catch(() => null);
-        if (canal) {
-          const embedAval = new EmbedBuilder()
-            .setColor(rating >= 4 ? config.colors.success : rating === 3 ? config.colors.warning : config.colors.danger)
-            .setTitle('⭐ Avaliação de Ticket')
-            .addFields(
-              { name: '👤 Usuário',   value: `<@${interaction.user.id}>`, inline: true },
-              { name: '⭐ Nota',      value: `${'⭐'.repeat(rating)} (${rating}/5)`, inline: true },
-              { name: '🎫 Ticket',    value: `\`${ticketId}\``, inline: true },
-              { name: '📝 Avaliação', value: labels[rating], inline: true },
-              { name: '✋ Atendente', value: ticket.claimed_by ? `\`${ticket.claimed_by}\`` : 'Nenhum', inline: true },
-            )
-            .setTimestamp();
-          await canal.send({ embeds: [embedAval] }).catch(() => {});
-        }
-      }
-    } catch {}
+    // Abrir modal para comentário antes de salvar
+    const modal = new ModalBuilder()
+      .setCustomId(`modal_rating_${ticketId}_${rating}`)
+      .setTitle(`⭐ Avaliação — ${'⭐'.repeat(rating)}`);
+    modal.addComponents(
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId('comentario')
+          .setLabel('Deixe um comentário (opcional)')
+          .setStyle(TextInputStyle.Paragraph)
+          .setRequired(false)
+          .setMaxLength(500)
+          .setPlaceholder('Como foi seu atendimento? O que podemos melhorar?'),
+      ),
+    );
+    return interaction.showModal(modal);
 
-    return interaction.update({
-      embeds: [new EmbedBuilder()
-        .setColor(rating >= 4 ? config.colors.success : rating === 3 ? config.colors.warning : config.colors.danger)
-        .setTitle('⭐ Avaliação Registrada!')
-        .setDescription(`Você avaliou com **${'⭐'.repeat(rating)}** — ${labels[rating]}\nObrigado pelo seu feedback!`)
-        .setTimestamp()],
-      components: [],
-    });
+    // (processado pelo modal modal_rating_ no handleModal)
   }
 
   // ── Reabrir ──────────────────────────────────────────────
@@ -442,6 +426,53 @@ async function handleButton(interaction) {
 
 async function handleModal(interaction) {
   const { customId } = interaction;
+
+  // Avaliação de ticket com comentário
+  if (customId.startsWith('modal_rating_')) {
+    const parts    = customId.replace('modal_rating_', '').split('_');
+    const rating   = parseInt(parts[parts.length - 1]);
+    const ticketId = parts.slice(0, -1).join('_');
+    const comentario = interaction.fields.getTextInputValue('comentario')?.trim() || '';
+    const ticket   = db.getTicket(ticketId);
+    if (!ticket) return interaction.reply({ embeds: [errorEmbed('Ticket não encontrado.')], ephemeral: true });
+
+    db.updateTicket(ticketId, { rating });
+    if (ticket.claimed_by) db.updateStaffRating(ticket.claimed_by, ticket.claimed_by, rating);
+    const labels = { 1: 'Péssimo 😞', 2: 'Ruim 😕', 3: 'Regular 😐', 4: 'Bom 😊', 5: 'Excelente 🤩' };
+
+    // Postar no canal central de avaliações
+    try {
+      const clientRef = require('../utils/clientRef');
+      const cl = clientRef.getClient();
+      if (cl) {
+        const canal = await cl.channels.fetch('1544558778261835846').catch(() => null);
+        if (canal) {
+          const embedAval = new EmbedBuilder()
+            .setColor(rating >= 4 ? config.colors.success : rating === 3 ? config.colors.warning : config.colors.danger)
+            .setTitle('⭐ Avaliação de Ticket')
+            .addFields(
+              { name: '👤 Usuário',    value: `<@${interaction.user.id}>`,                    inline: true },
+              { name: '⭐ Nota',       value: `${'⭐'.repeat(rating)} (${rating}/5)`,           inline: true },
+              { name: '🎫 Ticket',     value: `\`${ticketId}\``,                               inline: true },
+              { name: '📂 Categoria',  value: ticket.category || ticket.tipo || '—',           inline: true },
+              { name: '✋ Atendente',  value: ticket.claimed_by ? `\`${ticket.claimed_by}\`` : 'Nenhum', inline: true },
+              { name: '📝 Comentário', value: comentario || '*(sem comentário)*',              inline: false },
+            )
+            .setTimestamp();
+          await canal.send({ embeds: [embedAval] }).catch(() => {});
+        }
+      }
+    } catch {}
+
+    return interaction.reply({
+      embeds: [new EmbedBuilder()
+        .setColor(rating >= 4 ? config.colors.success : rating === 3 ? config.colors.warning : config.colors.danger)
+        .setTitle('⭐ Avaliação Registrada!')
+        .setDescription(`Você avaliou com **${'⭐'.repeat(rating)}** — ${labels[rating]}\n${comentario ? `> *"${comentario}"*` : ''}\nObrigado pelo seu feedback!`)
+        .setTimestamp()],
+      ephemeral: true,
+    });
+  }
 
   // Abrir ticket
   if (customId.startsWith('modal_open_ticket_')) {
