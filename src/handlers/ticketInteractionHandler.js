@@ -496,7 +496,16 @@ async function chamarStaffViaPix(interaction, ticket, ticketId) {
     });
     console.log('[Chamar Staff PIX] cobr:', JSON.stringify(cobr));
 
-    const qr = await efi.gerarQRCode(cobr.locId);
+    // Tentar gerar QR — se falhar, usa o location como fallback
+    let qrcode = null, imagemQr = null;
+    try {
+      const qr = await efi.gerarQRCode(cobr.locId);
+      qrcode   = qr.qrcode;
+      imagemQr = qr.imagemQrcode || qr.linkVisualizacao || null;
+    } catch (qrErr) {
+      console.warn('[Chamar Staff PIX] QR Code falhou, usando location:', qrErr.message);
+      qrcode = cobr.location || cobr.txid;
+    }
 
     const embed = new EmbedBuilder()
       .setColor(config.colors.pix)
@@ -508,8 +517,8 @@ async function chamarStaffViaPix(interaction, ticket, ticketId) {
         `⏱️ QR Code válido por **30 minutos**.`,
         `📋 Pix Copia e Cola abaixo:`,
       ].join('\n'))
-      .addFields({ name: '📋 Pix Copia e Cola', value: `\`\`\`${qr.qrcode}\`\`\`` })
-      .setImage(qr.imagemQrcode || qr.linkVisualizacao || null)
+      .addFields({ name: '📋 Pix Copia e Cola', value: `\`\`\`${qrcode}\`\`\`` })
+      .setImage(imagemQr)
       .setFooter({ text: `Ticket ${ticketId} • Gerado em ${new Date().toLocaleTimeString('pt-BR')}` })
       .setTimestamp();
 

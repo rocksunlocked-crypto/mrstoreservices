@@ -130,7 +130,11 @@ async function gerarQRCode(locId) {
   const res = await axios.get(
     `${baseURL()}/v2/loc/${locId}/qrcode`,
     { headers: headers(token), httpsAgent: agent }
-  );
+  ).catch(err => {
+    const detalhe = err.response?.data ? JSON.stringify(err.response.data) : err.message;
+    console.error('[EFI QRCode] Erro locId', locId, ':', detalhe);
+    throw new Error(detalhe);
+  });
 
   return {
     qrcode:           res.data.qrcode,
