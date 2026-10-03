@@ -603,19 +603,48 @@ async function entregarProduto(pedido, client) {
       .setFooter({ text: t('delivery_footer', idioma) });
 
     if (conteudo && conteudo !== '⚠️ Entrega manual — nossa equipe entrará em contato via ticket.') {
-      // Dividir em chunks de 900 chars para não ultrapassar o limite do Discord
-      const chunks = [];
-      let resto = conteudo;
-      while (resto.length > 0) {
-        chunks.push(resto.slice(0, 900));
-        resto = resto.slice(900);
-      }
-      for (let i = 0; i < chunks.length; i++) {
-        embed.addFields({
-          name:  i === 0 ? t('delivery_your_product', idioma) : `📦 Continuação (${i + 1})`,
-          value: `\`\`\`\n${chunks[i]}\n\`\`\``,
-          inline: false,
-        });
+      // Se quantidade >= 10, salvar como arquivo txt e enviar link de download
+      if (qtd >= 10) {
+        try {
+          const fs     = require('fs');
+          const path   = require('path');
+          const crypto = require('crypto');
+          const token  = crypto.randomBytes(16).toString('hex');
+          const dir    = path.join(process.cwd(), 'data', 'downloads');
+          if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+          const header = `=== ${produto.nome} ===\nPedido: ${pedido.id.slice(0,8).toUpperCase()}\nData: ${new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}\nQuantidade: ${qtd}\n${'='.repeat(40)}\n\n`;
+          fs.writeFileSync(path.join(dir, `${token}.txt`), header + conteudo, 'utf-8');
+          const baseUrl  = process.env.BOT_URL || 'https://mrstoreservices.up.railway.app';
+          const urlDownload = `${baseUrl}/download/${token}`;
+          embed.addFields({ name: '📥 Seu Arquivo', value: `[Clique aqui para baixar seus ${qtd} itens](${urlDownload})\n> Link válido por **48 horas**`, inline: false });
+          row.addComponents(
+            new ButtonBuilder().setLabel('📥 Baixar Arquivo').setStyle(ButtonStyle.Link).setURL(urlDownload),
+          );
+        } catch (e) {
+          console.error('[Download TXT]', e.message);
+          // Fallback: mostrar no embed normalmente
+          const chunks = [];
+          let resto = conteudo;
+          while (resto.length > 0) { chunks.push(resto.slice(0, 900)); resto = resto.slice(900); }
+          for (let i = 0; i < chunks.length; i++) {
+            embed.addFields({ name: i === 0 ? t('delivery_your_product', idioma) : `📦 Continuação (${i + 1})`, value: `\`\`\`\n${chunks[i]}\n\`\`\``, inline: false });
+          }
+        }
+      } else {
+        // Menos de 10 itens — mostrar direto no embed
+        const chunks = [];
+        let resto = conteudo;
+        while (resto.length > 0) {
+          chunks.push(resto.slice(0, 900));
+          resto = resto.slice(900);
+        }
+        for (let i = 0; i < chunks.length; i++) {
+          embed.addFields({
+            name:  i === 0 ? t('delivery_your_product', idioma) : `📦 Continuação (${i + 1})`,
+            value: `\`\`\`\n${chunks[i]}\n\`\`\``,
+            inline: false,
+          });
+        }
       }
     } else if (conteudo) {
       embed.addFields({

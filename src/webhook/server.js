@@ -161,6 +161,27 @@ app.get('/', (req, res) => {
 
 app.get('/health', (req, res) => res.json({ ok: true }));
 
+// ─── Download de arquivo de entrega ──────────────────────────────────────────
+app.get('/download/:token', (req, res) => {
+  try {
+    const fs   = require('fs');
+    const path = require('path');
+    const file = path.join(process.cwd(), 'data', 'downloads', `${req.params.token}.txt`);
+    if (!fs.existsSync(file)) return res.status(404).send('Arquivo não encontrado ou expirado.');
+    const stat = fs.statSync(file);
+    // Expirar após 48h
+    if (Date.now() - stat.mtimeMs > 48 * 60 * 60 * 1000) {
+      fs.unlinkSync(file);
+      return res.status(410).send('Link expirado.');
+    }
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="entrega_${req.params.token.slice(0,8)}.txt"`);
+    res.send(fs.readFileSync(file, 'utf-8'));
+  } catch (e) {
+    res.status(500).send('Erro ao acessar arquivo.');
+  }
+});
+
 // ─── Termos de Serviço ────────────────────────────────────────────────────────
 app.get('/termos', (req, res) => {
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
