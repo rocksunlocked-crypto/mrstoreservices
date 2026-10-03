@@ -6,7 +6,8 @@ const { buildTicketInfoEmbed } = require('../../tickets/panelBuilder');
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('info')
-    .setDescription('Exibe informações detalhadas do ticket atual'),
+    .setDescription('Exibe informações detalhadas do ticket atual')
+    .setDefaultMemberPermissions('0'),
 
   async execute(interaction) {
     const ticket = db.getTicketByChannel(interaction.channel.id);

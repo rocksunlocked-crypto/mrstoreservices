@@ -7,6 +7,7 @@ module.exports = {
   data: new SlashCommandBuilder()
     .setName('pedidos')
     .setDescription('📋 Veja seu histórico de pedidos')
+    .setDefaultMemberPermissions('0')
     .addStringOption(o =>
       o.setName('status')
        .setDescription('Filtrar por status')

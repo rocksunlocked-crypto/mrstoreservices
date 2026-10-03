@@ -6,6 +6,7 @@ module.exports = {
   data: new SlashCommandBuilder()
     .setName('admin-caixa')
     .setDescription('🎁 Gerenciar caixas misteriosas')
+    .setDefaultMemberPermissions('0')
     .addSubcommand(sub =>
       sub.setName('criar')
          .setDescription('➕ Criar nova caixa')

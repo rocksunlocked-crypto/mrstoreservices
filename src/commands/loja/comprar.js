@@ -6,6 +6,7 @@ module.exports = {
   data: new SlashCommandBuilder()
     .setName('comprar')
     .setDescription('💰 Compra um produto diretamente pelo ID')
+    .setDefaultMemberPermissions('0')
     .addStringOption(o => o.setName('produto_id').setDescription('ID do produto').setRequired(true))
     .addStringOption(o => o.setName('cupom').setDescription('Código de cupom de desconto').setRequired(false)),
   cooldown: 5,

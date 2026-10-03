@@ -8,6 +8,7 @@ module.exports = {
   data: new SlashCommandBuilder()
     .setName('painel')
     .setDescription('🖼️ Criar painel de produto fixo num canal')
+    .setDefaultMemberPermissions('0')
     .addChannelOption(o =>
       o.setName('canal')
        .setDescription('Canal onde o painel será postado')

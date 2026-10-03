@@ -5,7 +5,8 @@ const { Config } = require('../../database/database');
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('loja')
-    .setDescription('🛍️ Abre a loja e mostra os produtos disponíveis'),
+    .setDescription('🛍️ Abre a loja e mostra os produtos disponíveis')
+    .setDefaultMemberPermissions('0'),
   cooldown: 5,
   async execute(interaction) {
     if (!Config.get('loja_aberta')) {

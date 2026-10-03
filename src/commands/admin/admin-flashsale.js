@@ -8,6 +8,7 @@ module.exports = {
   data: new SlashCommandBuilder()
     .setName('flashsale')
     .setDescription('⚡ Gerenciar ofertas relâmpago')
+    .setDefaultMemberPermissions('0')
     .addSubcommand(sub =>
       sub.setName('iniciar')
          .setDescription('⚡ Iniciar uma flash sale')

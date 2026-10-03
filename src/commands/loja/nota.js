@@ -7,6 +7,7 @@ module.exports = {
   data: new SlashCommandBuilder()
     .setName('nota')
     .setDescription('🧾 Gerar nota fiscal de um pedido')
+    .setDefaultMemberPermissions('0')
     .addStringOption(o =>
       o.setName('pedido_id')
        .setDescription('ID do pedido (primeiros caracteres)')

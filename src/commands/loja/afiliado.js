@@ -6,6 +6,7 @@ module.exports = {
   data: new SlashCommandBuilder()
     .setName('afiliado')
     .setDescription('🤝 Sistema de afiliados e indicações')
+    .setDefaultMemberPermissions('0')
     .addSubcommand(sub => sub.setName('painel').setDescription('📊 Ver painel de afiliado'))
     .addSubcommand(sub =>
       sub.setName('usar')

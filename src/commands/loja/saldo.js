@@ -11,6 +11,7 @@ module.exports = {
   data: new SlashCommandBuilder()
     .setName('saldo')
     .setDescription('💰 Ver seu saldo, coins e histórico')
+    .setDefaultMemberPermissions('0')
     .addSubcommand(sub => sub.setName('ver').setDescription('💰 Ver saldo e coins'))
     .addSubcommand(sub =>
       sub.setName('transferir')

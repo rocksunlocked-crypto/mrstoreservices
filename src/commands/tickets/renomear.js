@@ -6,6 +6,7 @@ module.exports = {
   data: new SlashCommandBuilder()
     .setName('renomear')
     .setDescription('Renomeia o canal do ticket atual')
+    .setDefaultMemberPermissions('0')
     .addStringOption(o => o.setName('nome').setDescription('Novo assunto/nome').setRequired(true)),
 
   async execute(interaction) {

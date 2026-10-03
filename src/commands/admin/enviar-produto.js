@@ -17,6 +17,7 @@ module.exports = {
   data: new SlashCommandBuilder()
     .setName('gg')
     .setDescription('📤 Envia um produto manualmente para um usuário ou para o canal atual')
+    .setDefaultMemberPermissions('0')
     .addStringOption(option =>
       option
         .setName('produto_id')

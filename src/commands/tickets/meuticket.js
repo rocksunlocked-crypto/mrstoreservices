@@ -6,7 +6,8 @@ const config = require('../../config');
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('meuticket')
-    .setDescription('Veja seus tickets abertos e o histórico de fechados'),
+    .setDescription('Veja seus tickets abertos e o histórico de fechados')
+    .setDefaultMemberPermissions('0'),
 
   async execute(interaction) {
     await interaction.deferReply({ ephemeral: true });

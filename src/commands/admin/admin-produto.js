@@ -8,6 +8,7 @@ module.exports = {
   data: new SlashCommandBuilder()
     .setName('produto')
     .setDescription('📦 Gerenciar produtos da loja')
+    .setDefaultMemberPermissions('0')
     .addSubcommand(sub =>
       sub.setName('adicionar')
          .setDescription('➕ Adicionar produto')

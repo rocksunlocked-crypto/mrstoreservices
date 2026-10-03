@@ -7,6 +7,7 @@ module.exports = {
   data: new SlashCommandBuilder()
     .setName('ticket')
     .setDescription('🎫 Abrir um ticket de suporte')
+    .setDefaultMemberPermissions('0')
     .addStringOption(o =>
       o.setName('tipo')
        .setDescription('Tipo do ticket')

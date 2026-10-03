@@ -6,6 +6,7 @@ module.exports = {
   data: new SlashCommandBuilder()
     .setName('adicionar')
     .setDescription('Adiciona um usuário ao ticket atual')
+    .setDefaultMemberPermissions('0')
     .addUserOption(o => o.setName('usuario').setDescription('Usuário a ser adicionado').setRequired(true)),
 
   async execute(interaction) {

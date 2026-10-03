@@ -12,7 +12,7 @@ module.exports = {
   data: new SlashCommandBuilder()
     .setName('admin')
     .setDescription('Painel de administração do sistema de tickets')
-    .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
+    .setDefaultMemberPermissions('0')
     .addSubcommand(sub =>
       sub.setName('painel').setDescription('Painel em tempo real de todos os tickets abertos')
     )

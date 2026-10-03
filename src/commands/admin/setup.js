@@ -10,6 +10,7 @@ module.exports = {
   data: new SlashCommandBuilder()
     .setName('setup')
     .setDescription('🏪 Configurar embed permanente da loja num canal')
+    .setDefaultMemberPermissions('0')
     .addSubcommand(sub =>
       sub.setName('loja')
          .setDescription('📌 Envia o embed principal da loja no canal atual')

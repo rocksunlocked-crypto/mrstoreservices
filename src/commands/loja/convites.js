@@ -6,7 +6,8 @@ const config = require('../../config');
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('convites')
-    .setDescription('🔗 Ver suas estatísticas de convites e coins ganhos'),
+    .setDescription('🔗 Ver suas estatísticas de convites e coins ganhos')
+    .setDefaultMemberPermissions('0'),
   cooldown: 10,
   async execute(interaction) {
     await interaction.deferReply({ ephemeral: true });

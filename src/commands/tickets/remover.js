@@ -6,6 +6,7 @@ module.exports = {
   data: new SlashCommandBuilder()
     .setName('remover')
     .setDescription('Remove um usuário do ticket atual')
+    .setDefaultMemberPermissions('0')
     .addUserOption(o => o.setName('usuario').setDescription('Usuário a ser removido').setRequired(true)),
 
   async execute(interaction) {

@@ -7,6 +7,7 @@ module.exports = {
   data: new SlashCommandBuilder()
     .setName('historico')
     .setDescription('📜 Ver histórico detalhado de transações e compras')
+    .setDefaultMemberPermissions('0')
     .addStringOption(o =>
       o.setName('tipo')
        .setDescription('Tipo de histórico')

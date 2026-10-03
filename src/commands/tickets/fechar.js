@@ -6,6 +6,7 @@ module.exports = {
   data: new SlashCommandBuilder()
     .setName('fechar')
     .setDescription('Fecha o ticket atual')
+    .setDefaultMemberPermissions('0')
     .addStringOption(o => o.setName('motivo').setDescription('Motivo do fechamento').setRequired(false)),
 
   async execute(interaction) {

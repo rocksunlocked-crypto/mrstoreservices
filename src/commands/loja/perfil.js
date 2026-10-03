@@ -6,6 +6,7 @@ module.exports = {
   data: new SlashCommandBuilder()
     .setName('perfil')
     .setDescription('👤 Veja seu perfil, saldo e pontos de fidelidade')
+    .setDefaultMemberPermissions('0')
     .addUserOption(o => o.setName('usuario').setDescription('Ver perfil de outro usuário').setRequired(false)),
   cooldown: 5,
   async execute(interaction) {

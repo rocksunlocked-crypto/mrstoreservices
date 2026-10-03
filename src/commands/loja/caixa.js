@@ -5,6 +5,7 @@ module.exports = {
   data: new SlashCommandBuilder()
     .setName('caixa')
     .setDescription('🎁 Sistema de caixas misteriosas')
+    .setDefaultMemberPermissions('0')
     .addSubcommand(sub => sub.setName('abrir').setDescription('🎁 Ver caixas disponíveis para abrir'))
     .addSubcommand(sub => sub.setName('historico').setDescription('📜 Ver histórico de caixas abertas')),
   cooldown: 5,

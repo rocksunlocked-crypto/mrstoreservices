@@ -10,7 +10,8 @@ const moment = require('moment-timezone');
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('painel-admin')
-    .setDescription('🎛️ Abre o painel administrativo da loja'),
+    .setDescription('🎛️ Abre o painel administrativo da loja')
+    .setDefaultMemberPermissions('0'),
   cooldown: 5,
   async execute(interaction) {
     if (!isStaff(interaction.member)) {

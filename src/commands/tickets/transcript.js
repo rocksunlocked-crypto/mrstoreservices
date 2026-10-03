@@ -7,7 +7,8 @@ const config = require('../../config');
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('transcript')
-    .setDescription('Gera e salva o transcript do ticket atual'),
+    .setDescription('Gera e salva o transcript do ticket atual')
+    .setDefaultMemberPermissions('0'),
 
   async execute(interaction) {
     const ticket = db.getTicketByChannel(interaction.channel.id);

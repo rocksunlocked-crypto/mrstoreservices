@@ -13,6 +13,7 @@ module.exports = {
   data: new SlashCommandBuilder()
     .setName('tag')
     .setDescription('Gerencia as tags do ticket atual')
+    .setDefaultMemberPermissions('0')
     .addSubcommand(sub =>
       sub.setName('adicionar')
         .setDescription('Adiciona uma tag ao ticket')

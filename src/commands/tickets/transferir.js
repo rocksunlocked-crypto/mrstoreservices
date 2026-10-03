@@ -7,6 +7,7 @@ module.exports = {
   data: new SlashCommandBuilder()
     .setName('transferir')
     .setDescription('Transfere o ticket para outro membro da staff')
+    .setDefaultMemberPermissions('0')
     .addUserOption(o => o.setName('staff').setDescription('Membro da staff que irá assumir').setRequired(true)),
 
   async execute(interaction) {

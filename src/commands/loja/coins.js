@@ -12,6 +12,7 @@ module.exports = {
   data: new SlashCommandBuilder()
     .setName('coins')
     .setDescription(`${COIN_EMOJI} Sistema de Coins`)
+    .setDefaultMemberPermissions('0')
     .addSubcommand(sub => sub
       .setName('saldo')
       .setDescription(`${COIN_EMOJI} Ver seu saldo de coins`)

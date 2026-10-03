@@ -7,6 +7,7 @@ module.exports = {
   data: new SlashCommandBuilder()
     .setName('nota')
     .setDescription('Gerencia notas internas do ticket')
+    .setDefaultMemberPermissions('0')
     .addSubcommand(sub =>
       sub.setName('adicionar')
         .setDescription('Adiciona uma nota interna (apenas staff pode ver)')

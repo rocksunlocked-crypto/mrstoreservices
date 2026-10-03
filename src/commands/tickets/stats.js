@@ -45,6 +45,7 @@ module.exports = {
   data: new SlashCommandBuilder()
     .setName('stats')
     .setDescription('Estatísticas avançadas do sistema de tickets')
+    .setDefaultMemberPermissions('0')
     .addSubcommand(sub => sub.setName('geral').setDescription('Visão geral completa'))
     .addSubcommand(sub => sub.setName('grafico').setDescription('Gráfico de tickets dos últimos 7 dias'))
     .addSubcommand(sub => sub.setName('staff').setDescription('Ranking da staff com avaliações'))

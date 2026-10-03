@@ -6,7 +6,7 @@ module.exports = {
   data: new SlashCommandBuilder()
     .setName('bloquear')
     .setDescription('Bloqueia ou desbloqueia um usuário de abrir tickets')
-    .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
+    .setDefaultMemberPermissions('0')
     .addSubcommand(sub =>
       sub.setName('usuario')
         .setDescription('Bloqueia um usuário de abrir tickets')

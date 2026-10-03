@@ -6,7 +6,8 @@ const config = require('../../config');
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('assumir')
-    .setDescription('Assume (claim) o ticket atual como atendente'),
+    .setDescription('Assume (claim) o ticket atual como atendente')
+    .setDefaultMemberPermissions('0'),
 
   async execute(interaction) {
     const ticket = db.getTicketByChannel(interaction.channel.id);

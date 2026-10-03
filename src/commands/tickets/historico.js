@@ -6,7 +6,8 @@ const config = require('../../config');
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('historico')
-    .setDescription('Exibe o histórico de ações do ticket atual'),
+    .setDescription('Exibe o histórico de ações do ticket atual')
+    .setDefaultMemberPermissions('0'),
 
   async execute(interaction) {
     const ticket = db.getTicketByChannel(interaction.channel.id);

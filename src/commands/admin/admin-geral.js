@@ -10,6 +10,7 @@ module.exports = {
   data: new SlashCommandBuilder()
     .setName('admin')
     .setDescription('⚙️ Painel administrativo do bot')
+    .setDefaultMemberPermissions('0')
     .addSubcommand(sub =>
       sub.setName('stats')
          .setDescription('📊 Ver estatísticas gerais da loja')

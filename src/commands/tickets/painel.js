@@ -7,7 +7,7 @@ module.exports = {
   data: new SlashCommandBuilder()
     .setName('painel')
     .setDescription('Envia o painel de abertura de tickets no canal atual')
-    .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
+    .setDefaultMemberPermissions('0')
     .addStringOption(o => o.setName('titulo').setDescription('Título personalizado do painel').setRequired(false))
     .addStringOption(o => o.setName('descricao').setDescription('Descrição personalizada do painel').setRequired(false)),
 

@@ -7,6 +7,7 @@ module.exports = {
   data: new SlashCommandBuilder()
     .setName('resposta')
     .setDescription('Gerencia respostas rápidas pré-definidas')
+    .setDefaultMemberPermissions('0')
     .addSubcommand(sub =>
       sub.setName('criar')
         .setDescription('Cria uma resposta rápida')

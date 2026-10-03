@@ -7,6 +7,7 @@ module.exports = {
   data: new SlashCommandBuilder()
     .setName('prioridade')
     .setDescription('Define a prioridade do ticket atual')
+    .setDefaultMemberPermissions('0')
     .addStringOption(o =>
       o.setName('nivel')
         .setDescription('Nível de prioridade')

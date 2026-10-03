@@ -6,6 +6,7 @@ module.exports = {
   data: new SlashCommandBuilder()
     .setName('ranking')
     .setDescription('🏆 Ver ranking de compradores e afiliados')
+    .setDefaultMemberPermissions('0')
     .addStringOption(o =>
       o.setName('tipo')
        .setDescription('Tipo de ranking')
