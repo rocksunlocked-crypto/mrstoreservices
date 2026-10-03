@@ -161,6 +161,176 @@ app.get('/', (req, res) => {
 
 app.get('/health', (req, res) => res.json({ ok: true }));
 
+// ─── Termos de Serviço ────────────────────────────────────────────────────────
+app.get('/termos', (req, res) => {
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.send(`<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Termos de Serviço — MrStore</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:#03030a;color:#eeeeff;line-height:1.7;padding:40px 20px}
+.container{max-width:800px;margin:0 auto}
+h1{font-size:28px;font-weight:900;margin-bottom:8px;background:linear-gradient(135deg,#e8b840,#f5d060,#c084fc);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.subtitle{color:#5a5a90;font-size:13px;margin-bottom:40px}
+h2{font-size:18px;font-weight:700;color:#c4b5fd;margin:32px 0 12px;padding-left:12px;border-left:3px solid #6d28d9}
+p,li{font-size:14px;color:#9090c0;margin-bottom:10px}
+ul{padding-left:20px;margin-bottom:14px}
+li{margin-bottom:6px}
+strong{color:#eeeeff}
+.footer{margin-top:48px;padding-top:20px;border-top:1px solid #1a1a30;font-size:12px;color:#3a3a60;text-align:center}
+a{color:#a78bfa;text-decoration:none}
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>📜 Termos de Serviço</h1>
+  <div class="subtitle">MrStore Services — Última atualização: outubro de 2026</div>
+
+  <h2>1. Aceitação dos Termos</h2>
+  <p>Ao utilizar os serviços oferecidos pela <strong>MrStore</strong> através do servidor Discord ou do site, você concorda com estes Termos de Serviço. Caso não concorde, não utilize nossos serviços.</p>
+
+  <h2>2. Descrição dos Serviços</h2>
+  <p>A MrStore oferece produtos e serviços digitais, incluindo mas não limitado a:</p>
+  <ul>
+    <li>Contas e acessos a jogos e plataformas digitais</li>
+    <li>Softwares, menus e ferramentas para jogos</li>
+    <li>Serviços de suporte e atendimento via Discord</li>
+  </ul>
+
+  <h2>3. Pagamentos e Reembolsos</h2>
+  <p><strong>3.1.</strong> Todos os pagamentos são processados via PIX ou cartão de crédito. Os preços são exibidos em Reais (BRL).</p>
+  <p><strong>3.2.</strong> Produtos digitais entregues <strong>não possuem direito a reembolso</strong>, salvo em casos de falha comprovada na entrega do produto.</p>
+  <p><strong>3.3.</strong> Em caso de problemas, o cliente deve abrir um ticket no servidor Discord em até <strong>24 horas</strong> após a compra.</p>
+
+  <h2>4. Uso Aceitável</h2>
+  <p>O cliente concorda em não:</p>
+  <ul>
+    <li>Revender ou compartilhar produtos adquiridos sem autorização</li>
+    <li>Realizar chargebacks indevidos ou fraudes de pagamento</li>
+    <li>Usar os produtos para fins ilegais ou que violem os termos de terceiros</li>
+    <li>Assediar ou ameaçar membros da equipe</li>
+  </ul>
+
+  <h2>5. Suspensão e Banimento</h2>
+  <p>A MrStore se reserva o direito de suspender ou banir permanentemente qualquer usuário que viole estes termos, sem direito a reembolso.</p>
+
+  <h2>6. Responsabilidade</h2>
+  <p>A MrStore não se responsabiliza por:</p>
+  <ul>
+    <li>Danos causados pelo uso indevido dos produtos</li>
+    <li>Banimentos em jogos decorrentes do uso dos produtos</li>
+    <li>Problemas causados por terceiros (plataformas, APIs, etc.)</li>
+  </ul>
+
+  <h2>7. Alterações nos Termos</h2>
+  <p>Estes termos podem ser alterados a qualquer momento. O uso continuado dos serviços após alterações implica na aceitação dos novos termos.</p>
+
+  <h2>8. Contato</h2>
+  <p>Em caso de dúvidas, entre em contato através do nosso servidor Discord ou abra um ticket de suporte.</p>
+
+  <div class="footer">
+    © 2026 MrStore Services — Todos os direitos reservados<br>
+    <a href="/privacidade">Política de Privacidade</a>
+  </div>
+</div>
+</body>
+</html>`);
+});
+
+// ─── Política de Privacidade ──────────────────────────────────────────────────
+app.get('/privacidade', (req, res) => {
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.send(`<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Política de Privacidade — MrStore</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:#03030a;color:#eeeeff;line-height:1.7;padding:40px 20px}
+.container{max-width:800px;margin:0 auto}
+h1{font-size:28px;font-weight:900;margin-bottom:8px;background:linear-gradient(135deg,#e8b840,#f5d060,#c084fc);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.subtitle{color:#5a5a90;font-size:13px;margin-bottom:40px}
+h2{font-size:18px;font-weight:700;color:#c4b5fd;margin:32px 0 12px;padding-left:12px;border-left:3px solid #6d28d9}
+p,li{font-size:14px;color:#9090c0;margin-bottom:10px}
+ul{padding-left:20px;margin-bottom:14px}
+li{margin-bottom:6px}
+strong{color:#eeeeff}
+.footer{margin-top:48px;padding-top:20px;border-top:1px solid #1a1a30;font-size:12px;color:#3a3a60;text-align:center}
+a{color:#a78bfa;text-decoration:none}
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>🔒 Política de Privacidade</h1>
+  <div class="subtitle">MrStore Services — Última atualização: outubro de 2026</div>
+
+  <h2>1. Dados Coletados</h2>
+  <p>A MrStore coleta os seguintes dados ao usar nossos serviços:</p>
+  <ul>
+    <li><strong>ID do Discord:</strong> identificação única do usuário na plataforma Discord</li>
+    <li><strong>Nome de usuário Discord:</strong> usado para identificação nos tickets e pedidos</li>
+    <li><strong>Histórico de compras:</strong> produtos adquiridos, valores e datas</li>
+    <li><strong>Endereço IP:</strong> registrado para fins de segurança no painel web</li>
+  </ul>
+
+  <h2>2. Uso dos Dados</h2>
+  <p>Os dados coletados são utilizados exclusivamente para:</p>
+  <ul>
+    <li>Processar e entregar os produtos adquiridos</li>
+    <li>Prevenir fraudes e chargebacks indevidos</li>
+    <li>Gerenciar o histórico de atendimento e suporte</li>
+    <li>Manter a segurança do painel de controle</li>
+  </ul>
+
+  <h2>3. Compartilhamento de Dados</h2>
+  <p>A MrStore <strong>não vende, aluga ou compartilha</strong> seus dados pessoais com terceiros, exceto:</p>
+  <ul>
+    <li>Processadores de pagamento (EFI Bank / Stripe) — apenas os dados necessários para a transação</li>
+    <li>Quando exigido por lei ou ordem judicial</li>
+  </ul>
+
+  <h2>4. Retenção dos Dados</h2>
+  <p>Seus dados são mantidos enquanto você utiliza nossos serviços. Após solicitação de exclusão, os dados serão removidos em até <strong>30 dias</strong>, exceto registros financeiros que devem ser mantidos por obrigação legal.</p>
+
+  <h2>5. Segurança</h2>
+  <p>Implementamos medidas de segurança para proteger seus dados, incluindo:</p>
+  <ul>
+    <li>Senhas armazenadas com hash criptográfico (SHA-256 + salt)</li>
+    <li>Acesso ao painel restrito por IP para cargos privilegiados</li>
+    <li>Comunicação via HTTPS (SSL/TLS)</li>
+  </ul>
+
+  <h2>6. Seus Direitos</h2>
+  <p>Você tem o direito de:</p>
+  <ul>
+    <li>Solicitar acesso aos seus dados pessoais</li>
+    <li>Solicitar a correção de dados incorretos</li>
+    <li>Solicitar a exclusão dos seus dados</li>
+    <li>Retirar consentimento a qualquer momento</li>
+  </ul>
+  <p>Para exercer esses direitos, abra um ticket no nosso servidor Discord.</p>
+
+  <h2>7. Cookies e Sessões</h2>
+  <p>O painel web utiliza cookies de sessão para manter você autenticado. Esses cookies são temporários e expiram em <strong>7 dias</strong>. Não utilizamos cookies de rastreamento ou publicidade.</p>
+
+  <h2>8. Contato</h2>
+  <p>Em caso de dúvidas sobre privacidade, entre em contato através do servidor Discord ou abra um ticket de suporte.</p>
+
+  <div class="footer">
+    © 2026 MrStore Services — Todos os direitos reservados<br>
+    <a href="/termos">Termos de Serviço</a>
+  </div>
+</div>
+</body>
+</html>`);
+});
+
 // ─── Iniciar servidor ─────────────────────────────────────────────────────────
 async function start(client) {
   _client = client;
