@@ -184,7 +184,6 @@ router.get('/overview', auth.middlewareAba('overview'), (req, res) => {
   const user   = req.dashUser;
 
   const totalVendas  = db.prepare("SELECT COALESCE(SUM(valor_total),0) as v FROM pedidos WHERE status IN ('pago','entregue')").get()?.v || 0;
-  // Vendas hoje em horário de Brasília (UTC-3): subtrair 10800 segundos do início do dia UTC
   const vendasHoje   = db.prepare("SELECT COALESCE(SUM(valor_total),0) as v FROM pedidos WHERE status IN ('pago','entregue') AND pago_em >= (strftime('%s','now','start of day') - 10800)").get()?.v || 0;
   const pedPend      = db.prepare("SELECT COUNT(*) as c FROM pedidos WHERE status='pendente'").get()?.c || 0;
   const totalUsers   = db.prepare('SELECT COUNT(*) as c FROM usuarios').get()?.c || 0;
@@ -193,43 +192,111 @@ router.get('/overview', auth.middlewareAba('overview'), (req, res) => {
   const totalProd    = db.prepare('SELECT COUNT(*) as c FROM produtos WHERE ativo=1').get()?.c || 0;
   const pendentes    = dashDb.listarPendentes();
 
+  // Dados dos últimos 7 dias para gráfico de linha (horário Brasília)
+  const vendas7dias = db.prepare(`
+    SELECT date(pago_em - 10800, 'unixepoch') as dia, COALESCE(SUM(valor_total),0) as total, COUNT(*) as qtd
+    FROM pedidos WHERE status IN ('pago','entregue')
+    AND pago_em >= strftime('%s','now','-6 days')
+    GROUP BY dia ORDER BY dia ASC
+  `).all();
+
+  // Preencher dias sem venda com 0
+  const hoje = new Date();
+  const labels7 = [], data7valor = [], data7qtd = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(hoje); d.setDate(d.getDate() - i);
+    const key = d.toISOString().slice(0,10);
+    labels7.push(d.toLocaleDateString('pt-BR', { day:'2-digit', month:'2-digit' }));
+    const found = vendas7dias.find(v => v.dia === key);
+    data7valor.push(found ? Number(found.total.toFixed(2)) : 0);
+    data7qtd.push(found ? found.qtd : 0);
+  }
+
+  // Top 5 produtos mais vendidos
+  const topProdutos = db.prepare(`
+    SELECT pr.nome, COUNT(*) as qtd, COALESCE(SUM(p.valor_total),0) as receita
+    FROM pedidos p LEFT JOIN produtos pr ON p.produto_id=pr.id
+    WHERE p.status IN ('pago','entregue') AND pr.nome IS NOT NULL
+    GROUP BY p.produto_id ORDER BY qtd DESC LIMIT 5
+  `).all();
+
+  // Vendas por método de pagamento
+  const porMetodo = db.prepare(`
+    SELECT metodo_pag, COUNT(*) as qtd, COALESCE(SUM(valor_total),0) as total
+    FROM pedidos WHERE status IN ('pago','entregue')
+    GROUP BY metodo_pag ORDER BY qtd DESC
+  `).all();
+
+  // Vendas por categoria
+  const porCategoria = db.prepare(`
+    SELECT pr.categoria, COUNT(*) as qtd, COALESCE(SUM(p.valor_total),0) as total
+    FROM pedidos p LEFT JOIN produtos pr ON p.produto_id=pr.id
+    WHERE p.status IN ('pago','entregue') AND pr.categoria IS NOT NULL
+    GROUP BY pr.categoria ORDER BY total DESC LIMIT 8
+  `).all();
+
   const ultimasVendas = db.prepare(`
     SELECT p.*, pr.nome as produto_nome, pr.id as prod_id
-    FROM pedidos p
-    LEFT JOIN produtos pr ON p.produto_id = pr.id
+    FROM pedidos p LEFT JOIN produtos pr ON p.produto_id=pr.id
     WHERE p.status IN ('pago','entregue')
     ORDER BY p.pago_em DESC LIMIT 8
   `).all();
 
+  // Cores para gráficos
+  const CORES = ['#6d28d9','#06b6d4','#00e87a','#f59e0b','#ec4899','#f43f5e','#3b82f6','#a855f7'];
+
   const body = `
-    <div class="stats-grid">
+    <!-- Stats cards -->
+    <div class="stats-grid" style="margin-bottom:24px">
       <div class="stat-card" style="--glow-a:#22c55e;--glow-b:#16a34a">
         <div class="stat-label">Faturamento Total</div>
-        <div class="stat-value" style="color:#86efac">${fmtMoeda(totalVendas)}</div>
+        <div class="stat-value" style="color:#86efac;font-size:24px">${fmtMoeda(totalVendas)}</div>
         <div class="stat-sub">Todas as vendas concluídas</div>
       </div>
       <div class="stat-card" style="--glow-a:#f59e0b;--glow-b:#d97706">
         <div class="stat-label">Vendas Hoje</div>
-        <div class="stat-value" style="color:#fde68a">${fmtMoeda(vendasHoje)}</div>
-        <div class="stat-sub">${pedPend} pendente(s)</div>
+        <div class="stat-value" style="color:#fde68a;font-size:24px">${fmtMoeda(vendasHoje)}</div>
+        <div class="stat-sub">${pedPend} pedido(s) pendente(s)</div>
       </div>
       <div class="stat-card" style="--glow-a:#3b82f6;--glow-b:#2563eb">
-        <div class="stat-label">Usuários</div>
+        <div class="stat-label">Usuários Cadastrados</div>
         <div class="stat-value" style="color:#93c5fd">${totalUsers}</div>
         <div class="stat-sub">${totalProd} produtos ativos</div>
       </div>
       <div class="stat-card" style="--glow-a:#a855f7;--glow-b:#7c3aed">
         <div class="stat-label">Tickets Abertos</div>
         <div class="stat-value" style="color:#c4b5fd">${tickAbertos}</div>
-        <div class="stat-sub">🪙 ${Number(totalCoins).toLocaleString('pt-BR')} coins</div>
+        <div class="stat-sub">🪙 ${Number(totalCoins).toLocaleString('pt-BR')} coins em circulação</div>
+      </div>
+    </div>
+
+    <!-- Gráfico de linha — últimos 7 dias -->
+    <div style="display:grid;grid-template-columns:2fr 1fr;gap:20px;margin-bottom:24px">
+      <div class="table-card" style="padding:20px">
+        <div style="font-size:14px;font-weight:700;color:#fff;margin-bottom:16px">📈 Faturamento — Últimos 7 dias</div>
+        <canvas id="chart-7dias" height="100"></canvas>
+      </div>
+      <div class="table-card" style="padding:20px">
+        <div style="font-size:14px;font-weight:700;color:#fff;margin-bottom:16px">💳 Por Método de Pagamento</div>
+        <canvas id="chart-metodo" height="160"></canvas>
+      </div>
+    </div>
+
+    <!-- Top produtos + categorias -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:24px">
+      <div class="table-card" style="padding:20px">
+        <div style="font-size:14px;font-weight:700;color:#fff;margin-bottom:16px">🏆 Top 5 Produtos</div>
+        <canvas id="chart-produtos" height="160"></canvas>
+      </div>
+      <div class="table-card" style="padding:20px">
+        <div style="font-size:14px;font-weight:700;color:#fff;margin-bottom:16px">📦 Receita por Categoria</div>
+        <canvas id="chart-categorias" height="160"></canvas>
       </div>
     </div>
 
     ${pendentes.length > 0 ? `
-    <div class="table-card" style="border-color:#f59e0b40">
-      <div class="table-head">
-        <span class="table-title">⏳ Cadastros Pendentes (${pendentes.length})</span>
-      </div>
+    <div class="table-card" style="border-color:#f59e0b40;margin-bottom:24px">
+      <div class="table-head"><span class="table-title">⏳ Cadastros Pendentes (${pendentes.length})</span></div>
       <table>
         <tr><th>Usuário</th><th>Discord ID</th><th>Solicitado em</th><th>Ações</th></tr>
         ${pendentes.map(u => `<tr>
@@ -256,22 +323,103 @@ router.get('/overview', auth.middlewareAba('overview'), (req, res) => {
       <table>
         <tr><th>Pedido</th><th>Produto</th><th>Qtd</th><th>Valor Total</th><th>Data (Brasília)</th><th>Status</th></tr>
         ${ultimasVendas.length ? ultimasVendas.map(p => {
-          // Buscar variante da nota_fiscal
           let varNome = '';
           try { const n = JSON.parse(p.nota_fiscal||'{}'); if(n.varianteId){ const v=db.prepare('SELECT nome FROM variantes_produto WHERE id=?').get(n.varianteId); if(v) varNome=` <span style="color:#a78bfa;font-size:11px">/ ${v.nome}</span>`; } } catch {}
           return `<tr>
-          <td><code style="font-size:11px">${p.id.slice(0,8).toUpperCase()}</code></td>
-          <td>
-            <div>${p.produto_nome || '—'}${varNome}</div>
-            ${p.prod_id ? `<a href="/painel/loja/comprar/${p.prod_id}" class="btn btn-sm btn-ghost" style="margin-top:4px;font-size:10px;padding:2px 8px">🛒 Comprar</a>` : ''}
-          </td>
-          <td>${p.quantidade || 1}</td>
-          <td style="color:#86efac;font-weight:700">${fmtMoeda(p.valor_total)}</td>
-          <td>${fmtDate(p.pago_em)}</td>
-          <td>${badge(p.status)}</td>
-        </tr>`;}).join('') : '<tr><td colspan="6" style="text-align:center;color:#7878a0;padding:24px">Nenhuma venda ainda</td></tr>'}
+            <td><code style="font-size:11px">${p.id.slice(0,8).toUpperCase()}</code></td>
+            <td>
+              <div>${p.produto_nome || '—'}${varNome}</div>
+              ${p.prod_id ? `<a href="/painel/loja/comprar/${p.prod_id}" class="btn btn-sm btn-ghost" style="margin-top:4px;font-size:10px;padding:2px 8px">🛒 Comprar</a>` : ''}
+            </td>
+            <td>${p.quantidade || 1}</td>
+            <td style="color:#86efac;font-weight:700">${fmtMoeda(p.valor_total)}</td>
+            <td>${fmtDate(p.pago_em)}</td>
+            <td>${badge(p.status)}</td>
+          </tr>`;
+        }).join('') : '<tr><td colspan="6" style="text-align:center;color:#5a5a90;padding:24px">Nenhuma venda ainda</td></tr>'}
       </table>
-    </div>`;
+    </div>
+
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script>
+    Chart.defaults.color = '#5a5a90';
+    Chart.defaults.borderColor = 'rgba(109,40,217,0.15)';
+    const fmt = v => 'R$ ' + v.toFixed(2);
+
+    // Gráfico 7 dias
+    new Chart(document.getElementById('chart-7dias'), {
+      type: 'line',
+      data: {
+        labels: ${JSON.stringify(labels7)},
+        datasets: [{
+          label: 'Faturamento',
+          data: ${JSON.stringify(data7valor)},
+          borderColor: '#6d28d9',
+          backgroundColor: 'rgba(109,40,217,0.1)',
+          fill: true, tension: 0.4, pointBackgroundColor: '#9333ea', pointRadius: 4,
+        },{
+          label: 'Vendas',
+          data: ${JSON.stringify(data7qtd)},
+          borderColor: '#06b6d4',
+          backgroundColor: 'rgba(6,182,212,0.08)',
+          fill: true, tension: 0.4, pointBackgroundColor: '#06b6d4', pointRadius: 4,
+          yAxisID: 'y2',
+        }]
+      },
+      options: {
+        responsive: true,
+        interaction: { mode: 'index', intersect: false },
+        plugins: { legend: { labels: { color: '#9090c0', boxWidth: 12 } },
+          tooltip: { callbacks: { label: ctx => ctx.datasetIndex===0 ? fmt(ctx.parsed.y) : ctx.parsed.y + ' venda(s)' } } },
+        scales: {
+          x: { grid: { color: 'rgba(109,40,217,0.1)' } },
+          y: { grid: { color: 'rgba(109,40,217,0.1)' }, ticks: { callback: fmt } },
+          y2: { position: 'right', grid: { display: false }, ticks: { stepSize: 1 } },
+        }
+      }
+    });
+
+    // Gráfico método
+    new Chart(document.getElementById('chart-metodo'), {
+      type: 'doughnut',
+      data: {
+        labels: ${JSON.stringify(porMetodo.map(m => m.metodo_pag === 'pix' ? 'PIX' : m.metodo_pag?.includes('stripe') ? 'Cartão' : m.metodo_pag?.includes('coins') ? 'Coins' : m.metodo_pag || '?'))},
+        datasets: [{ data: ${JSON.stringify(porMetodo.map(m => Number(m.total.toFixed(2))))},
+          backgroundColor: ${JSON.stringify(CORES)}, borderWidth: 0, hoverOffset: 8 }]
+      },
+      options: { responsive: true, plugins: { legend: { position: 'bottom', labels: { color: '#9090c0', boxWidth: 12 } },
+        tooltip: { callbacks: { label: ctx => fmt(ctx.parsed) } } } }
+    });
+
+    // Top produtos
+    new Chart(document.getElementById('chart-produtos'), {
+      type: 'bar',
+      data: {
+        labels: ${JSON.stringify(topProdutos.map(p => p.nome?.slice(0,20) || '?'))},
+        datasets: [{ label: 'Vendas', data: ${JSON.stringify(topProdutos.map(p => p.qtd))},
+          backgroundColor: ${JSON.stringify(CORES)}, borderRadius: 6 }]
+      },
+      options: { responsive: true, indexAxis: 'y',
+        plugins: { legend: { display: false } },
+        scales: { x: { grid: { color: 'rgba(109,40,217,0.1)' } }, y: { grid: { display: false } } }
+      }
+    });
+
+    // Categorias
+    new Chart(document.getElementById('chart-categorias'), {
+      type: 'bar',
+      data: {
+        labels: ${JSON.stringify(porCategoria.map(c => c.categoria?.slice(0,18) || '?'))},
+        datasets: [{ label: 'Receita', data: ${JSON.stringify(porCategoria.map(c => Number(c.total.toFixed(2))))},
+          backgroundColor: ${JSON.stringify(CORES)}, borderRadius: 6 }]
+      },
+      options: { responsive: true, indexAxis: 'y',
+        plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => fmt(ctx.parsed.x) } } },
+        scales: { x: { grid: { color: 'rgba(109,40,217,0.1)' }, ticks: { callback: fmt } }, y: { grid: { display: false } } }
+      }
+    });
+    </script>`;
 
   res.send(layout(user, '📊 Visão Geral', body, 'overview'));
 });
