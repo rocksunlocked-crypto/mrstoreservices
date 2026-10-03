@@ -300,6 +300,27 @@ module.exports = {
       return;
     }
 
+    // ── Comando !infinito (toggle estoque infinito em variante) ────────────────
+    if (message.content.toLowerCase().startsWith('!infinito')) {
+      const args = message.content.trim().split(/\s+/);
+      if (args.length < 2) return message.reply('Uso: `!infinito <variante_id_8chars>`');
+      const varId = args[1];
+      const { db } = require('../database/database');
+      const variantes = db.prepare('SELECT * FROM variantes_produto WHERE id LIKE ?').all(`${varId}%`);
+      if (!variantes.length) return message.reply(`❌ Variante com ID \`${varId}\` não encontrada.`);
+      const v = variantes[0];
+      const novoInfinito = v.infinito ? 0 : 1;
+      db.prepare('UPDATE variantes_produto SET infinito=? WHERE id=?').run(novoInfinito, v.id);
+      await message.reply(`✅ Variante **${v.nome}** agora tem estoque **${novoInfinito ? 'INFINITO ♾️' : 'NORMAL'}**.`);
+      // Atualizar painel do produto
+      try {
+        const { atualizarPainelProduto } = require('../systems/painelProduto');
+        const paineis = db.prepare('SELECT * FROM paineis_canal WHERE produto_id=? AND ativo=1').all(v.produto_id);
+        for (const p of paineis) await atualizarPainelProduto(message.guild, p.id).catch(() => {});
+      } catch {}
+      return;
+    }
+
     // ── Comando !coins (qualquer usuário) ──────────────────────────────────
     if (message.content.toLowerCase() === '!coins') {
       const usuario = Usuarios.garantir(message.author.id, message.author.username);
