@@ -275,6 +275,31 @@ module.exports = {
       return;
     }
 
+    // ── Comando !ttk (atualizar painel de tickets) ────────────────────────────
+    if (message.content.toLowerCase() === '!ttk') {
+      try {
+        const { buildTicketPanel } = require('../tickets/panelBuilder');
+        const CANAL_TICKETS_PAINEL = '1522587244614127676';
+        const canal = message.guild.channels.cache.get(CANAL_TICKETS_PAINEL)
+          || await message.client.channels.fetch(CANAL_TICKETS_PAINEL).catch(() => null);
+        if (!canal) return message.reply('❌ Canal de tickets não encontrado.');
+
+        const msgs = await canal.messages.fetch({ limit: 50 });
+        const msgTicket = msgs.find(m => m.author.id === message.client.user.id && m.components?.length > 0);
+
+        if (msgTicket) {
+          await msgTicket.edit(buildTicketPanel());
+          await message.reply('✅ Painel de tickets atualizado!');
+        } else {
+          await canal.send(buildTicketPanel());
+          await message.reply('✅ Novo painel de tickets postado!');
+        }
+      } catch (e) {
+        await message.reply(`❌ Erro: ${e.message}`);
+      }
+      return;
+    }
+
     // ── Comando !coins (qualquer usuário) ──────────────────────────────────
     if (message.content.toLowerCase() === '!coins') {
       const usuario = Usuarios.garantir(message.author.id, message.author.username);
