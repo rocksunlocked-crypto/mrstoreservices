@@ -364,6 +364,39 @@ module.exports = {
       return;
     }
 
+    // ── Comando !compras (listar compras de hoje) ──────────────────────────────
+    if (message.content.toLowerCase() === '!compras') {
+      const { db } = require('../database/database');
+      const { EmbedBuilder } = require('discord.js');
+      const hoje = Math.floor(new Date().setHours(0,0,0,0) / 1000);
+      const compras = db.prepare(`
+        SELECT p.id, p.usuario_id, p.produto_id, p.quantidade, p.valor_total, p.metodo_pag, p.pago_em, pr.nome as produto_nome
+        FROM pedidos p
+        LEFT JOIN produtos pr ON pr.id = p.produto_id
+        WHERE p.status='entregue' AND p.pago_em >= ?
+        ORDER BY p.pago_em DESC
+      `).all(hoje);
+
+      if (!compras.length) return message.reply('📊 Nenhuma compra realizada hoje.');
+
+      const totalVendas = compras.reduce((acc, c) => acc + c.valor_total, 0);
+      const lista = compras.slice(0, 20).map((c, i) => 
+        `\`${String(i+1).padStart(2,'0')}\` <@${c.usuario_id}> • **${c.produto_nome}** (${c.quantidade}x) • R$ ${c.valor_total.toFixed(2)}`
+      ).join('\n');
+
+      const embed = new EmbedBuilder()
+        .setColor(0x00FF88)
+        .setTitle('🛍️ Compras de Hoje')
+        .setDescription(lista || '*(sem compras)*')
+        .addFields(
+          { name: '📊 Total de Compras', value: `**${compras.length}**`, inline: true },
+          { name: '💰 Faturamento',      value: `**R$ ${totalVendas.toFixed(2)}**`, inline: true },
+        )
+        .setTimestamp();
+
+      return message.reply({ embeds: [embed] });
+    }
+
     // ── Comando !coins (qualquer usuário) ──────────────────────────────────
     if (message.content.toLowerCase() === '!coins') {
       const usuario = Usuarios.garantir(message.author.id, message.author.username);

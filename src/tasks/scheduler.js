@@ -174,6 +174,33 @@ module.exports = function iniciarScheduler(client) {
 
   // ── KPI: Ranking de Coins — atualiza a cada 2s no canal fixo ────────────────
   const CANAL_KPI_COINS = '1544885444578254919';
+
+  // ── Polling de verificação de pagamento PIX (a cada 3 segundos) ─────────────
+  setInterval(async () => {
+    try {
+      const pedidosPendentes = db.prepare("SELECT * FROM pedidos WHERE status='pendente' AND metodo_pag='pix' AND criado_em > ?").all(Math.floor(Date.now() / 1000) - 1800);
+      if (pedidosPendentes.length === 0) return;
+
+      const efi = require('../systems/efi');
+      const { processarEntrega } = require('../systems/loja');
+
+      for (const pedido of pedidosPendentes) {
+        if (!pedido.tx_id) continue;
+        try {
+          const status = await efi.consultarPix(pedido.tx_id);
+          if (status?.status === 'CONCLUIDA' && status?.valor?.original) {
+            console.log(`[Polling PIX] ✅ Pagamento confirmado: ${pedido.id.slice(0,8)} | TxID: ${pedido.tx_id}`);
+            db.prepare("UPDATE pedidos SET status='pago', pago_em=strftime('%s','now') WHERE id=?").run(pedido.id);
+            await processarEntrega(Pedidos.get(pedido.id), client);
+          }
+        } catch (e) {
+          // Ignora erros de consulta individual
+        }
+      }
+    } catch (err) {
+      console.error('[Polling PIX]', err.message);
+    }
+  }, 3000); // 3 segundos
   let kpiMsgId = null;
 
   async function atualizarKpiCoins() {
