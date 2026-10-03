@@ -49,12 +49,15 @@ async function logVenda(client, pedido, extras = {}) {
     } catch {}
 
     // Nome completo: produto + variante + quantidade
-    const nomeProduto = extras.nomeProduto || produto?.nome || pedido.produto_id.slice(0,8);
-    const nomeCompleto = [
-      nomeProduto,
-      varianteNome ? `— ${varianteNome}` : null,
-    ].filter(Boolean).join(' ');
-    const qtdLabel = qtd > 1 ? ` (x${qtd})` : '';
+    const nomeProduto = extras.nomeProduto || produto?.nome || pedido.produto_id?.slice(0,8) || '—';
+    // Na log mostra só a variante se existir, senão o produto
+    const nomeExibido = varianteNome || nomeProduto;
+    const qtdLabel    = qtd > 1 ? ` ×${qtd}` : '';
+    const nomeCompleto = nomeProduto + (varianteNome ? ` — ${varianteNome}` : '');
+
+    // URL do carrinho do produto no dashboard
+    const baseUrl  = process.env.BOT_URL || 'https://mrstoreservices.up.railway.app';
+    const urlCompra = produto?.id ? `${baseUrl}/painel/loja/comprar/${produto.id}` : null;
 
     // Determinar quem vendeu
     let vendidoPor = '🤖 Bot (automático)';
@@ -78,21 +81,36 @@ async function logVenda(client, pedido, extras = {}) {
       .setColor(pagoCoins ? 0xFFD700 : 0x00D26A)
       .setTitle('🛒 Nova Venda Realizada')
       .addFields(
-        { name: '👤 Comprador',       value: `<@${pedido.usuario_id}> (${usuario?.nome || pedido.usuario_id})`, inline: false },
-        { name: '📦 Produto',         value: `**${nomeCompleto}${qtdLabel}**`,                                  inline: true  },
-        { name: '💵 Valor',           value: `**R$ ${Number(pedido.valor_total).toFixed(2)}**`,                 inline: true  },
-        { name: '💳 Pagamento',       value: formatarMetodo(metodo),                                            inline: true  },
-        { name: '🆔 Pedido',          value: `\`${pedido.id.slice(0,8).toUpperCase()}\``,                       inline: true  },
-        { name: '📅 Data/Hora',       value: data,                                                              inline: true  },
-        { name: '🤝 Vendido por',     value: vendidoPor,                                                        inline: true  },
-        { name: '🎁 Cashback',        value: cashback > 0 ? `+**${cashback} coins** (${pct}%)` : '❌ Sem cashback', inline: true },
-        { name: '🎟️ Cupom',          value: pedido.cupom_usado ? `\`${pedido.cupom_usado}\`` : '—',            inline: true  },
-        { name: '🤝 Afiliado',        value: afiliado ? `${afiliado.nome || afiliado.discord_id}` : '—',       inline: true  },
+        { name: '👤 Comprador',   value: `<@${pedido.usuario_id}> (${usuario?.nome || pedido.usuario_id})`, inline: false },
+        { name: '📦 Produto',     value: `**${nomeExibido}${qtdLabel}**`,                                   inline: true  },
+        { name: '💵 Valor Total', value: `**R$ ${Number(pedido.valor_total).toFixed(2)}**`,                 inline: true  },
+        { name: '🔢 Quantidade',  value: `**${qtd}**`,                                                      inline: true  },
+        { name: '💳 Pagamento',   value: formatarMetodo(metodo),                                            inline: true  },
+        { name: '🆔 Pedido',      value: `\`${pedido.id.slice(0,8).toUpperCase()}\``,                       inline: true  },
+        { name: '📅 Data/Hora',   value: data,                                                              inline: true  },
+        { name: '🤝 Vendido por', value: vendidoPor,                                                        inline: true  },
+        { name: '🎁 Cashback',    value: cashback > 0 ? `+**${cashback} coins** (${pct}%)` : '❌ Sem cashback', inline: true },
+        { name: '🎟️ Cupom',      value: pedido.cupom_usado ? `\`${pedido.cupom_usado}\`` : '—',            inline: true  },
       )
       .setTimestamp(ts * 1000)
       .setFooter({ text: `Máximo Store • ${nomeCompleto}` });
 
-    await canal.send({ embeds: [embed] });
+    const payload = { embeds: [embed] };
+
+    // Botão "Comprar de novo" com link para o carrinho
+    if (urlCompra) {
+      const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+      payload.components = [
+        new ActionRowBuilder().addComponents(
+          new ButtonBuilder()
+            .setLabel('🛒 Comprar de novo')
+            .setStyle(ButtonStyle.Link)
+            .setURL(urlCompra),
+        ),
+      ];
+    }
+
+    await canal.send(payload);
   } catch (err) {
     console.error('[CanalVendas] Erro ao logar venda:', err.message);
   }

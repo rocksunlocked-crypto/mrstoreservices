@@ -173,7 +173,88 @@ async function start(client) {
   } catch (e) { console.error('[Dashboard DB]', e.message); }
 
   return new Promise((resolve) => {
-    const server = app.listen(port, () => {
+    const http   = require('http');
+    const server = http.createServer(app);
+
+    // ── Socket.io — Sinalização WebRTC para streaming ──────────────────────
+    const { Server } = require('socket.io');
+    const io = new Server(server, {
+      cors: { origin: '*', methods: ['GET','POST'] },
+      path: '/stream-signal',
+    });
+
+    // rooms: Map<roomId, { streamerId, viewers: Set<socketId> }>
+    const rooms = new Map();
+
+    io.on('connection', (socket) => {
+      // Streamer anuncia sala
+      socket.on('stream:start', ({ roomId, userId, quality }) => {
+        rooms.set(roomId, { streamerId: socket.id, userId, quality, viewers: new Set() });
+        socket.join(roomId);
+        socket.roomId = roomId;
+        socket.role   = 'streamer';
+        io.emit('stream:list', getRoomList()); // atualiza lista para todos
+        console.log(`[Stream] Sala ${roomId} aberta por ${userId} [${quality}]`);
+      });
+
+      // Viewer entra na sala
+      socket.on('stream:join', ({ roomId, userId }) => {
+        const room = rooms.get(roomId);
+        if (!room) return socket.emit('stream:error', 'Sala não encontrada');
+        room.viewers.add(socket.id);
+        socket.join(roomId);
+        socket.roomId = roomId;
+        socket.role   = 'viewer';
+        // Avisar streamer que novo viewer chegou
+        io.to(room.streamerId).emit('stream:viewer-joined', { viewerId: socket.id, userId });
+        socket.emit('stream:joined', { streamerId: room.streamerId, quality: room.quality });
+        console.log(`[Stream] ${userId} entrou na sala ${roomId}`);
+      });
+
+      // Troca de ofertas/respostas/ICE (WebRTC signaling)
+      socket.on('webrtc:offer',     ({ to, offer })     => io.to(to).emit('webrtc:offer',     { from: socket.id, offer }));
+      socket.on('webrtc:answer',    ({ to, answer })    => io.to(to).emit('webrtc:answer',    { from: socket.id, answer }));
+      socket.on('webrtc:ice',       ({ to, candidate }) => io.to(to).emit('webrtc:ice',       { from: socket.id, candidate }));
+
+      // Streamer encerra sala
+      socket.on('stream:stop', () => endRoom(socket, io, rooms));
+
+      // Desconexão
+      socket.on('disconnect', () => {
+        if (socket.role === 'streamer') endRoom(socket, io, rooms);
+        else if (socket.roomId) {
+          const room = rooms.get(socket.roomId);
+          if (room) room.viewers.delete(socket.id);
+        }
+      });
+
+      // Listar salas ativas
+      socket.on('stream:list-req', () => socket.emit('stream:list', getRoomList()));
+    });
+
+    function endRoom(socket, io, rooms) {
+      const room = rooms.get(socket.roomId);
+      if (room) {
+        io.to(socket.roomId).emit('stream:ended');
+        rooms.delete(socket.roomId);
+        io.emit('stream:list', getRoomList());
+        console.log(`[Stream] Sala ${socket.roomId} encerrada`);
+      }
+    }
+
+    function getRoomList() {
+      return [...rooms.entries()].map(([id, r]) => ({
+        roomId:    id,
+        userId:    r.userId,
+        quality:   r.quality,
+        viewers:   r.viewers.size,
+      }));
+    }
+
+    // Expor io para uso em rotas do dashboard
+    app._io = io;
+
+    server.listen(port, () => {
       console.log(`🌐 Servidor webhook rodando na porta ${port}`);
       resolve();
     });
@@ -183,7 +264,7 @@ async function start(client) {
       } else {
         console.error('[Webhook]', err.message);
       }
-      resolve(); // não bloqueia o bot
+      resolve();
     });
   });
 }

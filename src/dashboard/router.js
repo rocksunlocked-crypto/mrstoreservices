@@ -184,7 +184,8 @@ router.get('/overview', auth.middlewareAba('overview'), (req, res) => {
   const user   = req.dashUser;
 
   const totalVendas  = db.prepare("SELECT COALESCE(SUM(valor_total),0) as v FROM pedidos WHERE status IN ('pago','entregue')").get()?.v || 0;
-  const vendasHoje   = db.prepare("SELECT COALESCE(SUM(valor_total),0) as v FROM pedidos WHERE status IN ('pago','entregue') AND pago_em >= strftime('%s','now','start of day')").get()?.v || 0;
+  // Vendas hoje em horário de Brasília (UTC-3): subtrair 10800 segundos do início do dia UTC
+  const vendasHoje   = db.prepare("SELECT COALESCE(SUM(valor_total),0) as v FROM pedidos WHERE status IN ('pago','entregue') AND pago_em >= (strftime('%s','now','start of day') - 10800)").get()?.v || 0;
   const pedPend      = db.prepare("SELECT COUNT(*) as c FROM pedidos WHERE status='pendente'").get()?.c || 0;
   const totalUsers   = db.prepare('SELECT COUNT(*) as c FROM usuarios').get()?.c || 0;
   const tickAbertos  = db.prepare("SELECT COUNT(*) as c FROM tickets WHERE status='aberto'").get()?.c || 0;
@@ -193,7 +194,8 @@ router.get('/overview', auth.middlewareAba('overview'), (req, res) => {
   const pendentes    = dashDb.listarPendentes();
 
   const ultimasVendas = db.prepare(`
-    SELECT p.*, pr.nome as produto_nome FROM pedidos p
+    SELECT p.*, pr.nome as produto_nome, pr.id as prod_id
+    FROM pedidos p
     LEFT JOIN produtos pr ON p.produto_id = pr.id
     WHERE p.status IN ('pago','entregue')
     ORDER BY p.pago_em DESC LIMIT 8
@@ -252,14 +254,22 @@ router.get('/overview', auth.middlewareAba('overview'), (req, res) => {
         <a href="/painel/pedidos" class="btn btn-sm btn-ghost">Ver todas →</a>
       </div>
       <table>
-        <tr><th>Pedido</th><th>Produto</th><th>Valor</th><th>Data</th><th>Status</th></tr>
-        ${ultimasVendas.length ? ultimasVendas.map(p => `<tr>
+        <tr><th>Pedido</th><th>Produto</th><th>Qtd</th><th>Valor Total</th><th>Data (Brasília)</th><th>Status</th></tr>
+        ${ultimasVendas.length ? ultimasVendas.map(p => {
+          // Buscar variante da nota_fiscal
+          let varNome = '';
+          try { const n = JSON.parse(p.nota_fiscal||'{}'); if(n.varianteId){ const v=db.prepare('SELECT nome FROM variantes_produto WHERE id=?').get(n.varianteId); if(v) varNome=` <span style="color:#a78bfa;font-size:11px">/ ${v.nome}</span>`; } } catch {}
+          return `<tr>
           <td><code style="font-size:11px">${p.id.slice(0,8).toUpperCase()}</code></td>
-          <td>${p.produto_nome || '—'}</td>
+          <td>
+            <div>${p.produto_nome || '—'}${varNome}</div>
+            ${p.prod_id ? `<a href="/painel/loja/comprar/${p.prod_id}" class="btn btn-sm btn-ghost" style="margin-top:4px;font-size:10px;padding:2px 8px">🛒 Comprar</a>` : ''}
+          </td>
+          <td>${p.quantidade || 1}</td>
           <td style="color:#86efac;font-weight:700">${fmtMoeda(p.valor_total)}</td>
           <td>${fmtDate(p.pago_em)}</td>
           <td>${badge(p.status)}</td>
-        </tr>`).join('') : '<tr><td colspan="5" style="text-align:center;color:#7878a0;padding:24px">Nenhuma venda ainda</td></tr>'}
+        </tr>`;}).join('') : '<tr><td colspan="6" style="text-align:center;color:#7878a0;padding:24px">Nenhuma venda ainda</td></tr>'}
       </table>
     </div>`;
 

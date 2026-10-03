@@ -73,6 +73,17 @@ function initDashDB() {
       criado_em   INTEGER DEFAULT (strftime('%s','now')),
       UNIQUE(produto_id, variante_id)
     );
+
+    CREATE TABLE IF NOT EXISTS dash_assinaturas_premium (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      usuario_id  INTEGER NOT NULL UNIQUE,
+      discord_id  TEXT,
+      pedido_id   TEXT,
+      inicio_em   INTEGER DEFAULT (strftime('%s','now')),
+      expira_em   INTEGER NOT NULL,
+      ativo       INTEGER DEFAULT 1,
+      criado_em   INTEGER DEFAULT (strftime('%s','now'))
+    );
   `);
 
   // Permissões padrão por cargo (dono pode mudar)
@@ -225,6 +236,39 @@ function removerPrecoRevendedor(id) {
   db.prepare('DELETE FROM dash_precos_revendedor WHERE id=?').run(id);
 }
 
+// ── Assinatura Premium ──────────────────────────────────────────────────────
+function isPremium(usuarioId) {
+  const agora = Math.floor(Date.now() / 1000);
+  const r = db.prepare('SELECT * FROM dash_assinaturas_premium WHERE usuario_id=? AND ativo=1 AND expira_em > ?').get(usuarioId, agora);
+  return !!r;
+}
+function getAssinatura(usuarioId) {
+  return db.prepare('SELECT * FROM dash_assinaturas_premium WHERE usuario_id=?').get(usuarioId);
+}
+function ativarPremium(usuarioId, discordId, pedidoId) {
+  const agora   = Math.floor(Date.now() / 1000);
+  const expira  = agora + 30 * 24 * 60 * 60; // 30 dias
+  const existe  = db.prepare('SELECT id FROM dash_assinaturas_premium WHERE usuario_id=?').get(usuarioId);
+  if (existe) {
+    db.prepare('UPDATE dash_assinaturas_premium SET ativo=1, expira_em=?, pedido_id=?, inicio_em=? WHERE usuario_id=?')
+      .run(expira, pedidoId, agora, usuarioId);
+  } else {
+    db.prepare('INSERT INTO dash_assinaturas_premium (usuario_id, discord_id, pedido_id, expira_em) VALUES (?,?,?,?)')
+      .run(usuarioId, discordId || null, pedidoId, expira);
+  }
+}
+function cancelarPremium(usuarioId) {
+  db.prepare('UPDATE dash_assinaturas_premium SET ativo=0 WHERE usuario_id=?').run(usuarioId);
+}
+function listarAssinaturas() {
+  return db.prepare(`
+    SELECT a.*, u.username, u.discord_id as discord
+    FROM dash_assinaturas_premium a
+    LEFT JOIN dash_usuarios u ON u.id = a.usuario_id
+    ORDER BY a.criado_em DESC
+  `).all();
+}
+
 module.exports = {
   initDashDB,
   getUsuario, getUsuarioByUsername, getUsuarioByDiscord,
@@ -234,4 +278,5 @@ module.exports = {
   criarSolicitacao, listarSolicitacoes, responderSolicitacao,
   precisaIpLock, getIpBloqueado, definirIpBloqueado, resetarIp, getIp,
   getPrecoRevendedor, listarPrecosRevendedor, salvarPrecoRevendedor, removerPrecoRevendedor,
+  isPremium, getAssinatura, ativarPremium, cancelarPremium, listarAssinaturas,
 };
