@@ -494,6 +494,7 @@ async function chamarStaffViaPix(interaction, ticket, ticketId) {
       pedidoId,
       nomeCliente: interaction.user.username?.slice(0, 50) || 'Cliente',
     });
+    console.log('[Chamar Staff PIX] cobr:', JSON.stringify(cobr));
 
     const qr = await efi.gerarQRCode(cobr.locId);
 
@@ -535,6 +536,7 @@ async function chamarStaffViaPix(interaction, ticket, ticketId) {
     return interaction.editReply({ embeds: [embed], components: [row] });
   } catch (err) {
     console.error('[Chamar Staff PIX]', err.message);
+    console.error('[Chamar Staff PIX] stack:', err.stack?.split('\n')[0]);
     return interaction.editReply({ embeds: [errorEmbed(`Erro ao gerar PIX: ${err.message}`)] });
   }
 }
