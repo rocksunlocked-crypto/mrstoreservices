@@ -132,6 +132,15 @@ async function gerarQRCode(locId) {
       `${baseURL()}/v2/loc/${locId}/qrcode`,
       { headers: headers(token), httpsAgent: agent }
     );
+    // A EFI às vezes retorna erro como string com status 200
+    if (typeof res.data === 'string' && res.data.includes('error')) {
+      console.error('[EFI QRCode] Resposta de erro (200):', res.data);
+      throw new Error(res.data);
+    }
+    if (!res.data?.qrcode) {
+      console.error('[EFI QRCode] qrcode ausente na resposta:', JSON.stringify(res.data));
+      throw new Error('QR Code não retornado pela EFI');
+    }
     return {
       qrcode:           res.data.qrcode,
       imagemQrcode:     res.data.imagemQrcode,

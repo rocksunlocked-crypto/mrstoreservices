@@ -496,22 +496,22 @@ async function chamarStaffViaPix(interaction, ticket, ticketId) {
     });
     console.log('[Chamar Staff PIX] cobr:', JSON.stringify(cobr));
 
-    // Tentar gerar QR — se falhar, usa o location como fallback
-    let qrcode = null, imagemQr = null;
-    try {
-      const qr = await efi.gerarQRCode(cobr.locId);
-      qrcode   = qr.qrcode;
-      imagemQr = qr.imagemQrcode || qr.linkVisualizacao || null;
-      console.log('[Chamar Staff PIX] QR gerado com sucesso');
-    } catch (qrErr) {
-      console.warn('[Chamar Staff PIX] QR Code falhou:', qrErr.message, '— usando txid como fallback');
-      // Usar o txid diretamente — o usuário pode copiar e colar no app do banco
-      qrcode = cobr.txid;
-      imagemQr = null;
-    }
+    // Usar location direto — funciona sem precisar do endpoint de QR Code
+    // O location é uma URL pública que qualquer app de banco aceita como Pix Copia e Cola
+    const pixCopiaCola = cobr.location || cobr.txid || pedidoId;
+    let imagemQr = null;
 
-    // Se nem o txid veio, abortar
-    if (!qrcode) throw new Error('Não foi possível gerar o código PIX.');
+    // Tentar QR Code — mas não é crítico
+    if (cobr.locId) {
+      try {
+        const qr = await efi.gerarQRCode(cobr.locId);
+        if (qr?.qrcode) {
+          imagemQr = qr.imagemQrcode || null;
+        }
+      } catch (qrErr) {
+        console.warn('[Chamar Staff PIX] QR opcional falhou:', qrErr.message);
+      }
+    }
 
     const embed = new EmbedBuilder()
       .setColor(config.colors.pix)
@@ -523,7 +523,7 @@ async function chamarStaffViaPix(interaction, ticket, ticketId) {
         `⏱️ QR Code válido por **30 minutos**.`,
         `📋 Pix Copia e Cola abaixo:`,
       ].join('\n'))
-      .addFields({ name: '📋 Pix Copia e Cola', value: `\`\`\`${qrcode}\`\`\`` })
+      .addFields({ name: '📋 Pix Copia e Cola', value: `\`\`\`${pixCopiaCola}\`\`\`` })
       .setImage(imagemQr)
       .setFooter({ text: `Ticket ${ticketId} • Gerado em ${new Date().toLocaleTimeString('pt-BR')}` })
       .setTimestamp();
