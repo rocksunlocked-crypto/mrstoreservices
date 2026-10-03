@@ -119,7 +119,7 @@ async function iniciarCompra(interaction, produtoId, cupomCodigo = null) {
 
   // Cupom
   if (cupomCodigo) {
-    const { valido, cupom, erro } = Cupons.validar(cupomCodigo, interaction.user.id, precoFinal);
+    const { valido, cupom, erro } = Cupons.validar(cupomCodigo, interaction.user.id, precoFinal, null, interaction.member);
     if (!valido) return interaction.editReply({ content: erro });
     const d = Cupons.calcDesconto(cupom, precoFinal);
     desconto += d; precoFinal -= d; cupomUsado = cupom;
@@ -383,7 +383,7 @@ async function iniciarCompraVariante(interaction, varianteId, client, cupomCodig
   if (cupomCodigo) {
     const painel = db.prepare('SELECT id FROM paineis_canal WHERE produto_id=? AND ativo=1 LIMIT 1').get(produto.id);
     const painelId = painel?.id || null;
-    const { valido, cupom, erro } = Cupons.validar(cupomCodigo, interaction.user.id, precoFinal, painelId);
+    const { valido, cupom, erro } = Cupons.validar(cupomCodigo, interaction.user.id, precoFinal, painelId, interaction.member);
     if (!valido) return interaction.editReply({ content: erro });
     const d = Cupons.calcDesconto(cupom, precoFinal);
     desconto += d; precoFinal -= d; cupomUsado = cupom;

@@ -336,7 +336,7 @@ module.exports = async (interaction, client) => {
     const painel   = db.prepare('SELECT id FROM paineis_canal WHERE produto_id=? AND ativo=1 LIMIT 1').get(pedido.produto_id);
     const painelId = painel?.id || null;
 
-    const { valido, cupom, erro } = Cupons.validar(codigo, interaction.user.id, pedido.valor_total, painelId);
+    const { valido, cupom, erro } = Cupons.validar(codigo, interaction.user.id, pedido.valor_total, painelId, interaction.member);
     if (!valido) return interaction.editReply({ content: erro });
 
     const desconto  = Cupons.calcDesconto(cupom, pedido.valor_total);

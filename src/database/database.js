@@ -663,8 +663,8 @@ const Cupons = {
       return { valido: false, erro: `❌ Você já usou este cupom ${usosDoUsuario}x (limite: ${limiteUsos}x).` };
     }
 
-    // Verificar lojas válidas (painelId)
-    if (c.lojas_validas) {
+    // Verificar lojas válidas (painelId) — SOMENTE se configurado
+    if (c.lojas_validas && c.lojas_validas !== 'null' && c.lojas_validas !== '') {
       try {
         const lojas = JSON.parse(c.lojas_validas);
         if (Array.isArray(lojas) && lojas.length > 0 && painelId && !lojas.includes(painelId)) {
@@ -673,8 +673,8 @@ const Cupons = {
       } catch {}
     }
 
-    // Verificar restrição por cargo (member opcional)
-    if (c.cargo_id && member) {
+    // Verificar restrição por cargo — SOMENTE se configurado E member disponível
+    if (c.cargo_id && c.cargo_id !== 'null' && c.cargo_id !== '' && member) {
       if (!member.roles?.cache?.has(c.cargo_id)) {
         return { valido: false, erro: `❌ Este cupom é exclusivo para o cargo <@&${c.cargo_id}>.` };
       }
