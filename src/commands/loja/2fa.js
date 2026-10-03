@@ -9,9 +9,9 @@ const {
 
 module.exports = {
   data: new SlashCommandBuilder()
-    .setName('2fa')
+    .setName('autenticador')
     .setDescription('🔐 Gerar códigos TOTP para suas contas')
-    .setDefaultMemberPermissions('0')  // Disponível para todos os membros
+    .setDefaultMemberPermissions('0')
     .addSubcommand(sub => sub
       .setName('add')
       .setDescription('💾 Salvar uma conta 2FA no bot')
