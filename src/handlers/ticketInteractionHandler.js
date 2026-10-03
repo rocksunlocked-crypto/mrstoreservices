@@ -509,7 +509,13 @@ async function chamarStaffViaPix(interaction, ticket, ticketId) {
       try {
         const qr = await efi.gerarQRCode(cobr.locId);
         console.log('[STAFF PIX 7a] QR retornou:', JSON.stringify({ qrcode: qr?.qrcode?.slice(0,30), imagemQrcode: qr?.imagemQrcode?.slice(0,50) }));
-        if (qr?.qrcode) imagemQr = qr.imagemQrcode || null;
+        // Discord só aceita URLs HTTP/HTTPS — base64 causa erro no setImage
+        if (qr?.qrcode && qr?.imagemQrcode && !qr.imagemQrcode.startsWith('data:')) {
+          imagemQr = qr.imagemQrcode;
+        } else if (qr?.linkVisualizacao) {
+          imagemQr = qr.linkVisualizacao;
+        }
+        // se imagemQrcode for base64, não usar
       } catch (qrErr) {
         console.warn('[STAFF PIX 7b] QR falhou:', qrErr.message);
       }
