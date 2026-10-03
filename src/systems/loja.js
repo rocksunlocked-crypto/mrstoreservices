@@ -498,14 +498,12 @@ async function entregarProduto(pedido, client) {
             else break;
           }
           conteudo = itens.length > 0 ? itens.join('\n') : null;
-          if (!conteudo && itens.length === 0) {
-            conteudo = '⚠️ Entrega manual — nossa equipe entrará em contato via ticket.';
-          }
+          // Se não conseguiu da variante, tenta estoque global como fallback
         }
       }
 
-      // Fallback estoque global
-      if (!conteudo) {
+      // Fallback estoque global (se não tem conteúdo ainda)
+      if (!conteudo || conteudo === null) {
         const itens = [];
         for (let i = 0; i < qtd; i++) {
           const item = db.prepare('SELECT * FROM estoque_digital WHERE produto_id=? AND usado=0 LIMIT 1').get(produto.id);
