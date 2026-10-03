@@ -213,6 +213,36 @@ client.once('ready', async () => {
 
   await registrarComandoMenu();
 
+  // Deploy automático de slash commands (atualiza permissões e novos comandos)
+  try {
+    const { REST, Routes } = require('discord.js');
+    const fs   = require('fs');
+    const path = require('path');
+    const cmds = [];
+    const seen = new Set();
+    function walkCmds(dir) {
+      for (const item of fs.readdirSync(dir)) {
+        const full = path.join(dir, item);
+        if (fs.statSync(full).isDirectory()) { walkCmds(full); continue; }
+        if (!item.endsWith('.js')) continue;
+        const cmd = require(full);
+        if (!cmd.data) continue;
+        if (seen.has(cmd.data.name)) continue;
+        seen.add(cmd.data.name);
+        cmds.push(cmd.data.toJSON());
+      }
+    }
+    walkCmds(path.join(__dirname, 'commands'));
+    const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
+    await rest.put(
+      Routes.applicationGuildCommands(process.env.CLIENT_ID, process.env.GUILD_ID),
+      { body: cmds },
+    );
+    console.log(`✅ ${cmds.length} slash commands registrados automaticamente.`);
+  } catch (e) {
+    console.error('[Deploy Commands]', e.message);
+  }
+
   // Atividade rotativa
   const atividades = [
     { name: '🛍️ Máximo Store',     type: ActivityType.Playing  },
