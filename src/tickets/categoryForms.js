@@ -37,19 +37,9 @@ function getModalForCategory(category) {
             .setPlaceholder('Ex: NomeDoUsuario#0000 ou 123456789').setRequired(true).setMinLength(2).setMaxLength(100),
         ),
         new ActionRowBuilder().addComponents(
-          new TextInputBuilder().setCustomId('denuncia_motivo')
-            .setLabel('Motivo da denúncia').setStyle(TextInputStyle.Short)
-            .setPlaceholder('Ex: Uso de hack, spam, comportamento tóxico...').setRequired(true).setMinLength(5).setMaxLength(100),
-        ),
-        new ActionRowBuilder().addComponents(
-          new TextInputBuilder().setCustomId('denuncia_descricao')
-            .setLabel('Descrição detalhada').setStyle(TextInputStyle.Paragraph)
-            .setPlaceholder('Descreva o ocorrido com o máximo de detalhes...').setRequired(true).setMinLength(20).setMaxLength(1000),
-        ),
-        new ActionRowBuilder().addComponents(
-          new TextInputBuilder().setCustomId('denuncia_provas')
-            .setLabel('Provas (links de imagem/vídeo)').setStyle(TextInputStyle.Paragraph)
-            .setPlaceholder('Cole aqui os links das provas (prints, vídeos)...').setRequired(false).setMaxLength(500),
+          new TextInputBuilder().setCustomId('ticket_motivo')
+            .setLabel('Motivo da denúncia').setStyle(TextInputStyle.Paragraph)
+            .setPlaceholder('Explique o motivo da denúncia...').setRequired(true).setMinLength(5).setMaxLength(1000),
         ),
       );
       break;
@@ -58,18 +48,23 @@ function getModalForCategory(category) {
       modal.addComponents(
         new ActionRowBuilder().addComponents(
           new TextInputBuilder().setCustomId('ticket_subject')
-            .setLabel('Assunto — resumo do problema').setStyle(TextInputStyle.Short)
-            .setPlaceholder('Ex: Não consigo acessar meu cargo VIP...').setRequired(true).setMinLength(5).setMaxLength(100),
+            .setLabel('Por que está abrindo este ticket?').setStyle(TextInputStyle.Paragraph)
+            .setPlaceholder('Descreva brevemente seu problema ou dúvida...').setRequired(true).setMinLength(5).setMaxLength(1000),
+        ),
+      );
+      break;
+
+    case 'anydesk':
+      modal.addComponents(
+        new ActionRowBuilder().addComponents(
+          new TextInputBuilder().setCustomId('ticket_subject')
+            .setLabel('Motivo do suporte').setStyle(TextInputStyle.Short)
+            .setPlaceholder('Descreva brevemente o que precisa...').setRequired(true).setMinLength(3).setMaxLength(100),
         ),
         new ActionRowBuilder().addComponents(
-          new TextInputBuilder().setCustomId('suporte_descricao')
-            .setLabel('Descreva seu problema em detalhes').setStyle(TextInputStyle.Paragraph)
-            .setPlaceholder('Explique o que aconteceu, quando começou, o que já tentou...').setRequired(true).setMinLength(20).setMaxLength(1000),
-        ),
-        new ActionRowBuilder().addComponents(
-          new TextInputBuilder().setCustomId('suporte_tentativas')
-            .setLabel('O que você já tentou fazer?').setStyle(TextInputStyle.Paragraph)
-            .setPlaceholder('Ex: Tentei reiniciar, verificar permissões...').setRequired(false).setMaxLength(500),
+          new TextInputBuilder().setCustomId('anydesk_codigo')
+            .setLabel('Código AnyDesk').setStyle(TextInputStyle.Short)
+            .setPlaceholder('Ex: 123 456 789').setRequired(true).setMinLength(5).setMaxLength(20),
         ),
       );
       break;
@@ -78,18 +73,8 @@ function getModalForCategory(category) {
       modal.addComponents(
         new ActionRowBuilder().addComponents(
           new TextInputBuilder().setCustomId('ticket_subject')
-            .setLabel('Nome do servidor / projeto').setStyle(TextInputStyle.Short)
-            .setPlaceholder('Nome oficial do seu servidor ou projeto').setRequired(true).setMinLength(2).setMaxLength(100),
-        ),
-        new ActionRowBuilder().addComponents(
-          new TextInputBuilder().setCustomId('parceria_membros')
-            .setLabel('Quantidade de membros').setStyle(TextInputStyle.Short)
-            .setPlaceholder('Ex: 500 membros').setRequired(true).setMaxLength(30),
-        ),
-        new ActionRowBuilder().addComponents(
-          new TextInputBuilder().setCustomId('parceria_descricao')
-            .setLabel('Sobre o servidor / proposta').setStyle(TextInputStyle.Paragraph)
-            .setPlaceholder('Descreva seu servidor, tema, o que oferece na parceria...').setRequired(true).setMinLength(20).setMaxLength(1000),
+            .setLabel('Por que está abrindo este ticket?').setStyle(TextInputStyle.Paragraph)
+            .setPlaceholder('Descreva sua proposta de parceria...').setRequired(true).setMinLength(5).setMaxLength(1000),
         ),
         new ActionRowBuilder().addComponents(
           new TextInputBuilder().setCustomId('parceria_link')
@@ -103,11 +88,8 @@ function getModalForCategory(category) {
       modal.addComponents(
         new ActionRowBuilder().addComponents(
           new TextInputBuilder().setCustomId('ticket_subject')
-            .setLabel('Assunto').setStyle(TextInputStyle.Short).setRequired(true).setMinLength(5).setMaxLength(100),
-        ),
-        new ActionRowBuilder().addComponents(
-          new TextInputBuilder().setCustomId('suporte_descricao')
-            .setLabel('Descrição').setStyle(TextInputStyle.Paragraph).setRequired(true).setMinLength(10).setMaxLength(1000),
+            .setLabel('Por que está abrindo este ticket?').setStyle(TextInputStyle.Paragraph)
+            .setRequired(true).setMinLength(5).setMaxLength(1000),
         ),
       );
   }
@@ -116,7 +98,12 @@ function getModalForCategory(category) {
 }
 
 function getTitleForCategory(category) {
-  return { denuncia: '🚨 Abrir Denúncia', suporte: '🛠️ Abrir Ticket de Suporte', parceria: '🤝 Proposta de Parceria' }[category] || 'Abrir Ticket';
+  return {
+    denuncia: '🚨 Abrir Denúncia',
+    suporte:  '🛠️ Abrir Ticket de Suporte',
+    anydesk:  '🖥️ Suporte AnyDesk',
+    parceria: '🤝 Proposta de Parceria',
+  }[category] || 'Abrir Ticket';
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -125,43 +112,39 @@ function getTitleForCategory(category) {
 
 function extractModalData(interaction, category) {
   const subject = interaction.fields.getTextInputValue('ticket_subject');
-  let extraFields = [], description = '';
+  let extraFields = [], description = subject;
 
   switch (category) {
-    case 'denuncia':
-      description   = interaction.fields.getTextInputValue('denuncia_descricao');
-      const motivo  = interaction.fields.getTextInputValue('denuncia_motivo');
-      const provas  = interaction.fields.getTextInputValue('denuncia_provas') || 'Não informado';
+    case 'denuncia': {
+      const motivo = interaction.fields.getTextInputValue('ticket_motivo');
       extraFields = [
         { name: '🎯 Denunciado', value: subject, inline: true },
-        { name: '⚠️ Motivo',     value: motivo,  inline: true },
-        { name: '📋 Descrição',  value: description },
-        { name: '🔗 Provas',     value: provas },
+        { name: '⚠️ Motivo',     value: motivo,  inline: false },
       ];
+      description = motivo;
       break;
-    case 'suporte':
-      description       = interaction.fields.getTextInputValue('suporte_descricao');
-      const tentativas  = interaction.fields.getTextInputValue('suporte_tentativas') || 'Não informado';
+    }
+    case 'anydesk': {
+      const codigo = interaction.fields.getTextInputValue('anydesk_codigo');
       extraFields = [
-        { name: '❓ Problema',   value: subject,     inline: true },
-        { name: '📋 Descrição',  value: description },
-        { name: '🔄 Tentativas', value: tentativas  },
+        { name: '📋 Motivo',        value: subject, inline: false },
+        { name: '🖥️ Código AnyDesk', value: `\`${codigo}\``, inline: true },
       ];
+      description = subject;
       break;
-    case 'parceria':
-      description   = interaction.fields.getTextInputValue('parceria_descricao');
-      const membros = interaction.fields.getTextInputValue('parceria_membros');
-      const link    = interaction.fields.getTextInputValue('parceria_link') || 'Não informado';
+    }
+    case 'parceria': {
+      const link = interaction.fields.getTextInputValue('parceria_link') || 'Não informado';
       extraFields = [
-        { name: '🏠 Servidor',  value: subject, inline: true },
-        { name: '👥 Membros',   value: membros, inline: true },
-        { name: '📋 Sobre',     value: description },
-        { name: '🔗 Convite',   value: link },
+        { name: '📋 Proposta', value: subject, inline: false },
+        { name: '🔗 Convite',  value: link,    inline: true  },
       ];
+      description = subject;
       break;
+    }
     default:
-      description = interaction.fields.getTextInputValue('suporte_descricao') || subject;
-      extraFields = [{ name: '📋 Descrição', value: description }];
+      extraFields = [{ name: '📋 Descrição', value: subject }];
+      description = subject;
   }
 
   return { subject, extraFields, description };
@@ -183,8 +166,13 @@ function buildWelcomeEmbed(ticket, user, extraFields) {
     },
     suporte: {
       header: '🛠️ **TICKET DE SUPORTE ABERTO**',
-      desc:   `Nossa equipe está pronta para te ajudar!\n\n> 📋 Aguarde um atendente assumir seu ticket.\n> 💡 Envie prints ou informações adicionais enquanto espera.\n> ⏱️ Resposta em até **12 horas**`,
+      desc:   `Nossa equipe está pronta para te ajudar!\n\n> 📋 Aguarde um atendente assumir seu ticket.\n> ⏱️ Resposta em até **12 horas**`,
       footer: '💙 Estamos aqui para ajudar!',
+    },
+    anydesk: {
+      header: '🖥️ **SUPORTE ANYDESK**',
+      desc:   `Sua solicitação de suporte remoto foi registrada!\n\n> 🖥️ Aguarde um atendente conectar via AnyDesk.\n> ⏱️ Resposta em até **1 hora**`,
+      footer: '🔒 Conexão segura via AnyDesk',
     },
     parceria: {
       header: '🤝 **PROPOSTA DE PARCERIA RECEBIDA**',

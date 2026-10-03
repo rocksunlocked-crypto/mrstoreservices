@@ -38,6 +38,12 @@ function buildTicketPanel(customTitle, customDesc) {
         emoji: '🛠️',
       },
       {
+        label: 'Suporte AnyDesk',
+        description: 'Atendimento remoto via AnyDesk',
+        value: 'anydesk',
+        emoji: '🖥️',
+      },
+      {
         label: 'Parceria',
         description: 'Proposta de parceria com o servidor',
         value: 'parceria',
