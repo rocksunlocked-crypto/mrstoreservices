@@ -24,6 +24,8 @@ const CORES = {
   membro_entrou:    0x43B581,
   membro_saiu:      0xED4245,
   sorteio_finalizado: 0xFFD700,
+  compra:           0x00FF88,
+  punição:          0xFF0000,
 };
 
 const ICONES = {
@@ -40,6 +42,8 @@ const ICONES = {
   membro_entrou:     '👋',
   membro_saiu:       '🚪',
   sorteio_finalizado:'🏁',
+  compra:            '🛍️',
+  punição:           '🔨',
 };
 
 /**

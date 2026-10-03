@@ -733,6 +733,22 @@ async function entregarProduto(pedido, client) {
         await fecharTicketAutomatico(guild, pedido.ticket_id, null, 'Pagamento confirmado e produto entregue');
       }
     } catch {}
+
+    // ── Log de compra no canal de logs ────────────────────────────────────────
+    try {
+      const { log: logMr } = require('../menu/logsHandler');
+      logMr(client, guild, 'compra', {
+        acao: '🛍️ Compra Realizada',
+        alvo: `<@${pedido.usuario_id}>`,
+        detalhes: [
+          `**Produto:** ${produto.nome}`,
+          `**Quantidade:** ${pedido.quantidade}`,
+          `**Valor:** R$ ${pedido.valor_total.toFixed(2)}`,
+          `**Pedido:** \`${pedido.id.slice(0,8).toUpperCase()}\``,
+          `**Método:** ${pedido.metodo_pag || 'PIX'}`,
+        ].join('\n'),
+      });
+    } catch {}
   } catch (err) {
     console.error('[EntregarProduto]', err.message);
   }

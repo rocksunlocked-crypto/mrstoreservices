@@ -739,7 +739,18 @@ client.on('interactionCreate', async (interaction) => {
         return handleTicketInteraction(interaction);
       }
 
-      // Outros modais Bot Mr
+      // Modais bot de vendas (ANTES da verificação Bot Mr para não bloquear compras)
+      const modalsHandler = path.join(__dirname, 'handlers', 'modals.js');
+      if (fs.existsSync(modalsHandler)) {
+        try {
+          const result = await require(modalsHandler)(interaction, client);
+          if (result !== undefined) return result;
+        } catch (e) {
+          // Se o handler não tratou, continua para baixo
+        }
+      }
+
+      // Outros modais Bot Mr (só quem tem cargo)
       if (!temCargoBotMr(interaction)) return semPermissao(interaction);
       switch (id) {
         case 'modal_anuncio':          return anuncio.processarModal(interaction);
@@ -750,10 +761,6 @@ client.on('interactionCreate', async (interaction) => {
         case 'modal_bot_desautorizar': return bot.processarDesautorizar(interaction);
         case 'modal_usuario':          return usuario.processarModal(interaction);
       }
-
-      // Modais bot de vendas (fallback)
-      const modalsHandler = path.join(__dirname, 'handlers', 'modals.js');
-      if (fs.existsSync(modalsHandler)) return require(modalsHandler)(interaction, client);
     }
 
   } catch (err) {
