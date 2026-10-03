@@ -481,7 +481,7 @@ async function handleModal(interaction) {
 // ────────────────────────────────────────────────────────────────────────────
 
 async function chamarStaffViaPix(interaction, ticket, ticketId) {
-  await interaction.deferReply({ ephemeral: true });
+  await interaction.deferReply({ flags: 64 }); // 64 = ephemeral
 
   try {
     const efi    = require('../systems/efi');
