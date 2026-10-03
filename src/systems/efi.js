@@ -102,7 +102,13 @@ async function criarCobrancaPix({ valor, descricao, pedidoId, nomeCliente, cpf }
     `${baseURL()}/v2/cob`,
     payload,
     { headers: headers(token), httpsAgent: agent }
-  );
+  ).catch(err => {
+    const detalhe = err.response?.data
+      ? JSON.stringify(err.response.data)
+      : err.message;
+    console.error('[EFI PIX] Erro ao criar cobrança:', detalhe);
+    throw new Error(detalhe);
+  });
 
   return {
     txid:     res.data.txid,
