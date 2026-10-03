@@ -285,6 +285,24 @@ client.once('ready', async () => {
       // Apenas ATUALIZAR o painel admin já existente (não repostar)
       await atualizarPainelAdmin(guild);
 
+      // Atualizar painel de tickets (editar mensagem existente com novas opções)
+      try {
+        const { buildTicketPanel } = require('./tickets/panelBuilder');
+        const { db: dbMain } = require('./database/database');
+        const painelTicket = dbMain.prepare("SELECT * FROM paineis_canal WHERE produto_id='ticket_panel' LIMIT 1").get();
+        if (painelTicket?.mensagem_id && painelTicket?.canal_id) {
+          const canalTicket = guild.channels.cache.get(painelTicket.canal_id)
+            || await client.channels.fetch(painelTicket.canal_id).catch(() => null);
+          if (canalTicket) {
+            const msgTicket = await canalTicket.messages.fetch(painelTicket.mensagem_id).catch(() => null);
+            if (msgTicket) {
+              await msgTicket.edit(buildTicketPanel()).catch(() => {});
+              console.log('[Tickets] ✅ Painel de tickets atualizado com novas opções.');
+            }
+          }
+        }
+      } catch (e) { console.error('[Tickets Panel Update]', e.message); }
+
       // Apenas ATUALIZAR painéis de produto já existentes (não repostar)
       const paineis = db.prepare('SELECT * FROM paineis_canal WHERE ativo=1 AND mensagem_id IS NOT NULL').all();
       console.log(`🔄 Atualizando ${paineis.length} painel(is) de produto...`);
