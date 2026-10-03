@@ -490,9 +490,9 @@ async function chamarStaffViaPix(interaction, ticket, ticketId) {
 
     const cobr = await efi.criarCobrancaPix({
       valor:       1.00,
-      descricao:   `Chamar Staff — Ticket ${ticketId}`,
+      descricao:   `Chamar Staff`,
       pedidoId,
-      nomeCliente: interaction.user.username,
+      nomeCliente: interaction.user.username?.slice(0, 50) || 'Cliente',
     });
 
     const qr = await efi.gerarQRCode(cobr.locId);
@@ -548,6 +548,19 @@ async function verificarPixChamada(interaction, txid, ticketId) {
       return interaction.editReply({ embeds: [new EmbedBuilder().setColor(config.colors.warning)
         .setDescription('⏳ Pagamento ainda não identificado. Aguarde alguns segundos e tente novamente.')] });
     }
+    // Log de vendas — Chamar Staff
+    try {
+      const { db: dbMain } = require('../database/database');
+      const { logVenda }   = require('../utils/canalVendas');
+      const pedido = dbMain.prepare("SELECT * FROM pedidos WHERE tx_id=?").get(txid);
+      if (pedido) {
+        dbMain.prepare("UPDATE pedidos SET status='pago', pago_em=strftime('%s','now') WHERE tx_id=? AND status='pendente'").run(txid);
+        await logVenda(interaction.client, { ...pedido, status: 'pago', metodo_pag: 'pix' }, {
+          vendidoPorCustom: `🎫 Ticket — Chamar Staff`,
+        });
+      }
+    } catch (e) { console.error('[Chamar Staff logVenda]', e.message); }
+
     await notificarStaffChamada(interaction.client, ticketId, interaction.guild, interaction.channel, interaction.user.id);
     return interaction.editReply({ embeds: [successEmbed('✅ Pagamento confirmado! Staff notificado no privado.')] });
   } catch (err) {
@@ -723,7 +736,7 @@ async function verificarPagamentoAdminPix(interaction, txid, ticketId) {
   }
 }
 
-async function marcarPagoPainel(canal, txid, ticketId, client) {
+async function marcarPagoPainel(canal, txid, ticketId, client, atendenteId = null) {
   // Atualiza pedido no banco
   try {
     const { Pedidos, db: dbMain } = require('../database/database');
@@ -735,9 +748,10 @@ async function marcarPagoPainel(canal, txid, ticketId, client) {
         try {
           const { logVenda } = require('../utils/canalVendas');
           const nota = pedido.nota_fiscal ? JSON.parse(pedido.nota_fiscal) : {};
+          const atendente = atendenteId || nota.geradoPor || null;
           await logVenda(client, { ...pedido, status: 'pago', metodo_pag: 'pix' }, {
-            atendente:   nota.geradoPor || null,
-            nomeProduto: null,
+            atendente,
+            vendidoPorCustom: atendente ? null : '🎫 Ticket (admin gerou QR)',
           });
         } catch (e) { console.error('[PIX Admin logVenda]', e.message); }
       }
@@ -780,7 +794,7 @@ function iniciarPollingAdminPix(txid, ticketId, interaction, produto, valor, ped
       const status = await efi.consultarCobranca(txid);
       if (status.pago) {
         clearInterval(timer);
-        await marcarPagoPainel(interaction.channel, txid, ticketId, interaction.client);
+        await marcarPagoPainel(interaction.channel, txid, ticketId, interaction.client, atendente);
       }
     } catch {}
     if (tentativas >= 36) clearInterval(timer);

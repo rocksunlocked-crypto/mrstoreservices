@@ -88,13 +88,13 @@ async function criarCobrancaPix({ valor, descricao, pedidoId, nomeCliente, cpf }
     calendario: { expiracao: 1800 },
     devedor: {
       cpf:  cpf ? cpf.replace(/\D/g, '') : '09772166240',
-      nome: nomeCliente || 'Cliente',
+      nome: (nomeCliente || 'Cliente').replace(/[^a-zA-Z0-9 áàâãéèêíìîóòôõúùûçÁÀÂÃÉÈÊÍÌÎÓÒÔÕÚÙÛÇ]/g, '').trim().slice(0, 60) || 'Cliente',
     },
     valor: { original: Number(valor).toFixed(2) },
     chave: config.efi.pixKey,
-    solicitacaoPagador: descricao || 'Máximo Store',
+    solicitacaoPagador: (descricao || 'Máximo Store').slice(0, 140),
     infoAdicionais: [
-      { nome: 'Pedido', valor: pedidoId.slice(0, 8).toUpperCase() },
+      { nome: 'Pedido', valor: (pedidoId || 'N/A').slice(0, 8).toUpperCase() },
     ],
   };
 
@@ -107,7 +107,8 @@ async function criarCobrancaPix({ valor, descricao, pedidoId, nomeCliente, cpf }
       ? JSON.stringify(err.response.data)
       : err.message;
     console.error('[EFI PIX] Erro ao criar cobrança:', detalhe);
-    throw new Error(detalhe);
+    console.error('[EFI PIX] Payload enviado:', JSON.stringify({ ...payload, chave: payload.chave }));
+    throw new Error(typeof err.response?.data === 'object' ? JSON.stringify(err.response.data) : detalhe);
   });
 
   return {
