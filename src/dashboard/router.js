@@ -2498,4 +2498,191 @@ router.post('/produtos/:id/toggle', auth.middlewareAba('config_mr'), (req, res) 
   res.redirect('/painel/config-mr?sec=produtos&msg=ok');
 });
 
+// ─── CARRINHOS ───────────────────────────────────────────────
+// Lista produtos com IDs e variantes — útil quando o Discord não carrega
+router.get('/carrinhos', auth.middlewareAba('carrinhos'), (req, res) => {
+  const { db } = getMainDb();
+  const user   = req.dashUser;
+  const search = (req.query.q || '').trim();
+  const prodId = req.query.produto || '';
+  const msg    = req.query.msg || '';
+  const podeEditar = ['sub_dono','dono','resp_staff'].includes(user.cargo);
+
+  const where  = search ? `WHERE p.nome LIKE '%${search.replace(/'/g,"''")}%' AND p.ativo=1` : 'WHERE p.ativo=1';
+  const produtos = db.prepare(`SELECT * FROM produtos ${where} ORDER BY p.categoria ASC, p.nome ASC`).all();
+
+  // Se um produto foi selecionado, carrega suas variantes e estoque
+  let variantesHtml = '';
+  let produtoSel = null;
+  if (prodId) {
+    produtoSel = db.prepare('SELECT * FROM produtos WHERE id=?').get(prodId);
+    if (produtoSel) {
+      const variantes = db.prepare('SELECT * FROM variantes_produto WHERE produto_id=? ORDER BY ordem ASC').all(prodId);
+      const painel    = db.prepare('SELECT canal_id, mensagem_id FROM paineis_canal WHERE produto_id=?').get(prodId);
+      variantesHtml = `
+        <div class="table-card" style="margin-top:20px">
+          <div class="table-head">
+            <div>
+              <span class="table-title">📋 ${produtoSel.nome}</span>
+              <div style="font-size:11px;color:#5a5a90;margin-top:3px">
+                🆔 Produto: <code style="color:#a78bfa;user-select:all">${produtoSel.id}</code>
+                ${painel ? `&nbsp;|&nbsp; 📢 Canal: <code style="color:#60a5fa">${painel.canal_id}</code>` : ''}
+              </div>
+            </div>
+            ${podeEditar ? `<a href="/painel/carrinhos/editar?produto=${prodId}" class="btn btn-sm btn-primary">✏️ Editar Plano</a>` : ''}
+          </div>
+          ${variantes.length === 0 ? `<div style="padding:24px;text-align:center;color:#5a5a90">Nenhuma variante encontrada.</div>` : `
+          <table>
+            <tr><th>Nome do Plano</th><th>ID da Variante</th><th>Preço</th><th>Estoque</th><th>Status</th></tr>
+            ${variantes.map(v => {
+              const est = db.prepare('SELECT COUNT(*) as c FROM estoque_variante WHERE variante_id=? AND usado=0').get(v.id)?.c || 0;
+              return `<tr>
+                <td style="font-weight:600;color:#fff">${v.nome}</td>
+                <td><code style="font-size:11px;color:#a78bfa;user-select:all;cursor:copy" onclick="navigator.clipboard.writeText('${v.id}');this.textContent='✅ Copiado!';setTimeout(()=>this.textContent='${v.id}',1500)">${v.id}</code></td>
+                <td style="color:#00e87a;font-weight:600">${fmtMoeda(v.preco)}</td>
+                <td>${v.estoque === -1 ? '∞ Ilimitado' : `${est} disponíveis`}</td>
+                <td>${badge(v.ativo ? 'ativo' : 'inativo')}</td>
+              </tr>`;
+            }).join('')}
+          </table>`}
+        </div>`;
+    }
+  }
+
+  // Select menu de produtos
+  const selectOpts = produtos.map(p =>
+    `<option value="${p.id}" ${p.id === prodId ? 'selected' : ''}>[${p.categoria||'Geral'}] ${p.nome}</option>`
+  ).join('');
+
+  const body = `
+    ${msg==='ok'?`<div class="alert alert-success">✅ Salvo!</div>`:''}
+    ${msg==='err'?`<div class="alert alert-error">❌ Erro ao salvar.</div>`:''}
+
+    <div class="table-card" style="margin-bottom:0">
+      <div class="table-head"><span class="table-title">🛒 Selecionar Carrinho</span></div>
+      <div style="padding:20px">
+        <form method="GET" style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+          <div class="form-group" style="flex:1;margin:0">
+            <label>Buscar por nome</label>
+            <input class="form-control" name="q" value="${search}" placeholder="Digitar nome...">
+          </div>
+          <div class="form-group" style="flex:2;margin:0">
+            <label>Escolher Produto</label>
+            <select class="form-control" name="produto" onchange="this.form.submit()">
+              <option value="">— Selecione um produto —</option>
+              ${selectOpts}
+            </select>
+          </div>
+          <button class="btn btn-primary" type="submit">🔍 Ver</button>
+        </form>
+      </div>
+    </div>
+
+    ${variantesHtml}`;
+
+  res.send(layout(user, '🛒 Carrinhos', body, 'carrinhos'));
+});
+
+// ─── CARRINHOS — Editar plano (variante) ─────────────────────
+router.get('/carrinhos/editar', auth.middlewareAba('carrinhos'), (req, res) => {
+  const user = req.dashUser;
+  if (!['sub_dono','dono','resp_staff'].includes(user.cargo)) return res.redirect('/painel/carrinhos');
+  const { db } = getMainDb();
+  const prodId  = req.query.produto || '';
+  const varId   = req.query.variante || '';
+  const msg     = req.query.msg || '';
+
+  const produtos = db.prepare('SELECT id, nome, categoria FROM produtos WHERE ativo=1 ORDER BY categoria, nome').all();
+  const variantesSel = prodId ? db.prepare('SELECT * FROM variantes_produto WHERE produto_id=? ORDER BY ordem').all(prodId) : [];
+  const varSel = varId ? db.prepare('SELECT * FROM variantes_produto WHERE id=?').get(varId) : null;
+
+  const prodOpts = produtos.map(p =>
+    `<option value="${p.id}" ${p.id===prodId?'selected':''}>[${p.categoria||'Geral'}] ${p.nome}</option>`
+  ).join('');
+  const varOpts = variantesSel.map(v =>
+    `<option value="${v.id}" ${v.id===varId?'selected':''}>${v.nome} — ${fmtMoeda(v.preco)}</option>`
+  ).join('');
+
+  const body = `
+    <a href="/painel/carrinhos${prodId?'?produto='+prodId:''}" class="btn btn-ghost btn-sm" style="margin-bottom:20px">← Voltar</a>
+    ${msg==='ok'?`<div class="alert alert-success">✅ Plano atualizado!</div>`:''}
+    ${msg==='err'?`<div class="alert alert-error">❌ Erro ao salvar.</div>`:''}
+
+    <div class="table-card" style="max-width:640px">
+      <div class="table-head"><span class="table-title">✏️ Editar Plano</span></div>
+      <div style="padding:24px">
+        <!-- Step 1: Escolher produto -->
+        <form method="GET" id="form-prod" style="margin-bottom:20px">
+          <input type="hidden" name="variante" value="">
+          <div class="form-group">
+            <label>1. Escolher Produto</label>
+            <select class="form-control" name="produto" onchange="document.getElementById('form-prod').submit()">
+              <option value="">— Selecione —</option>
+              ${prodOpts}
+            </select>
+          </div>
+        </form>
+
+        ${prodId && variantesSel.length > 0 ? `
+        <!-- Step 2: Escolher variante -->
+        <form method="GET" id="form-var" style="margin-bottom:20px">
+          <input type="hidden" name="produto" value="${prodId}">
+          <div class="form-group">
+            <label>2. Escolher Plano</label>
+            <select class="form-control" name="variante" onchange="document.getElementById('form-var').submit()">
+              <option value="">— Selecione o plano —</option>
+              ${varOpts}
+            </select>
+          </div>
+        </form>` : prodId ? `<div class="alert alert-info">⚠️ Este produto não tem planos (variantes).</div>` : ''}
+
+        ${varSel ? `
+        <!-- Step 3: Editar campos -->
+        <form method="POST" action="/painel/carrinhos/editar/salvar" style="border-top:1px solid var(--border);padding-top:20px;margin-top:8px">
+          <input type="hidden" name="variante_id" value="${varSel.id}">
+          <input type="hidden" name="produto_id"  value="${prodId}">
+          <div style="background:rgba(109,40,217,0.06);border:1px solid rgba(109,40,217,0.2);border-radius:10px;padding:14px;margin-bottom:20px;font-size:12px;color:#9090c0">
+            🆔 ID da Variante: <code style="color:#a78bfa;user-select:all">${varSel.id}</code>
+          </div>
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Nome do Plano</label>
+              <input class="form-control" name="nome" value="${varSel.nome}" required>
+            </div>
+            <div class="form-group">
+              <label>Preço (R$)</label>
+              <input class="form-control" type="number" name="preco" step="0.01" min="0.01" value="${varSel.preco}" required>
+            </div>
+            <div class="form-group">
+              <label>Estoque (-1 = ilimitado)</label>
+              <input class="form-control" type="number" name="estoque" value="${varSel.estoque}">
+            </div>
+            <div class="form-group" style="grid-column:1/-1">
+              <label>Descrição</label>
+              <input class="form-control" name="descricao" value="${varSel.descricao||''}">
+            </div>
+          </div>
+          <button class="btn btn-primary" type="submit" style="width:100%;padding:12px;font-size:15px">💾 Salvar Plano</button>
+        </form>` : ''}
+      </div>
+    </div>`;
+
+  res.send(layout(user, '✏️ Editar Plano', body, 'carrinhos'));
+});
+
+router.post('/carrinhos/editar/salvar', auth.middlewareAba('carrinhos'), express.urlencoded({extended:false}), (req, res) => {
+  const user = req.dashUser;
+  if (!['sub_dono','dono','resp_staff'].includes(user.cargo)) return res.redirect('/painel/carrinhos');
+  const { db }        = getMainDb();
+  const { variante_id, produto_id, nome, preco, estoque, descricao } = req.body;
+  try {
+    db.prepare("UPDATE variantes_produto SET nome=?, preco=?, estoque=?, descricao=?, atualizado_em=strftime('%s','now') WHERE id=?")
+      .run(nome?.trim(), parseFloat(preco), parseInt(estoque??-1), descricao?.trim()||null, variante_id);
+    res.redirect(`/painel/carrinhos/editar?produto=${produto_id}&variante=${variante_id}&msg=ok`);
+  } catch(e) {
+    console.error('[Carrinhos Editar]', e.message);
+    res.redirect(`/painel/carrinhos/editar?produto=${produto_id}&variante=${variante_id}&msg=err`);
+  }
+});
+
 module.exports = router;

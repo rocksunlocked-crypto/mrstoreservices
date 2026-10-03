@@ -17,6 +17,7 @@ const ABAS_INFO = {
   perfil:       { icon: '👤', label: 'Perfil'          },
   meus_pedidos: { icon: '📦', label: 'Meus Pedidos'    },
   revendedor:   { icon: '🏪', label: 'Revendedor'      },
+  carrinhos:    { icon: '🛒', label: 'Carrinhos'        },
   solicitar:    { icon: '📋', label: 'Solicitar Item'  },
   solicitacoes: { icon: '📥', label: 'Solicitações'   },
   usuarios:     { icon: '👥', label: 'Usuários'       },

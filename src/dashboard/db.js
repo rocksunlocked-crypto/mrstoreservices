@@ -87,12 +87,12 @@ function initDashDB() {
   `);
 
   // Permissões padrão por cargo (dono pode mudar)
-  const ABAS = ['overview','loja','perfil','solicitar','solicitacoes','usuarios','produtos','pedidos','tickets','cupons','gerenciar','config_mr','clientes','meus_pedidos','revendedor'];
+  const ABAS = ['overview','loja','perfil','solicitar','solicitacoes','usuarios','produtos','pedidos','tickets','cupons','gerenciar','config_mr','clientes','meus_pedidos','revendedor','carrinhos'];
   const DEFAULTS = {
     cliente:     ['loja','perfil','clientes','meus_pedidos'],
     revendedor:  ['loja','perfil','clientes','meus_pedidos','revendedor'],
-    staff:       ['loja','perfil','solicitar','usuarios','clientes','meus_pedidos'],
-    resp_staff:  ['loja','perfil','solicitar','solicitacoes','usuarios','clientes','meus_pedidos'],
+    staff:       ['loja','perfil','solicitar','usuarios','clientes','meus_pedidos','carrinhos'],
+    resp_staff:  ['loja','perfil','solicitar','solicitacoes','usuarios','clientes','meus_pedidos','carrinhos'],
     sub_dono:    ABAS,
     dono:        ABAS,
   };
@@ -114,12 +114,12 @@ function initDashDB() {
     }
   }
   for (const cargo of ['resp_staff']) {
-    for (const aba of ['clientes','meus_pedidos','solicitar','solicitacoes','loja','perfil','usuarios']) {
+    for (const aba of ['clientes','meus_pedidos','solicitar','solicitacoes','loja','perfil','usuarios','carrinhos']) {
       db.prepare('INSERT OR REPLACE INTO dash_permissoes_cargo (cargo, aba, permitido) VALUES (?,?,1)').run(cargo, aba);
     }
   }
   for (const cargo of ['staff']) {
-    for (const aba of ['clientes','meus_pedidos','loja','perfil','solicitar','usuarios']) {
+    for (const aba of ['clientes','meus_pedidos','loja','perfil','solicitar','usuarios','carrinhos']) {
       db.prepare('INSERT OR REPLACE INTO dash_permissoes_cargo (cargo, aba, permitido) VALUES (?,?,1)').run(cargo, aba);
     }
   }
