@@ -302,12 +302,16 @@ client.once('ready', async () => {
           '1549523707293204490': 'Spoofer',           // Spoofer Private
           '1549538378561757294': 'Spoofer',           // Spoofer Astrix
           '1553981298064756857': 'Spoofer',           // Spoofer Smoke
+          '1555781125270667366': 'Spoofer',           // Spoofer novo
           '1549538342066983003': 'Mod Menu FiveM',    // Astrix Menu
           '1549538423507910687': 'Mod Menu FiveM',    // Next Menu
           '1553979985700847626': 'Mod Menu FiveM',    // Smoke Menu
-          '1552328037335433287': 'External',          // (categoria External)
+          '1555779447968370699': 'Mod Menu FiveM',    // Menu novo
+          '1552328037335433287': 'External',          // External
+          '1551791700949860412': 'External',          // External novo
           '1551791388180611072': 'Combos',            // Combo Astrix
           '1551791731920478229': 'Combos',            // Combo Smoke
+          '1553982816080109598': 'Combos',            // Combo novo
           '1544956134463504435': 'Contas FiveM',      // Steam WL
           '1544933939053989958': 'Contas FiveM',      // Discord
           '1544831892354900068': 'Contas FiveM',      // Rockstar
