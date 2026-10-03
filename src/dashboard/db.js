@@ -133,6 +133,8 @@ function initDashDB() {
       .run(OWNER, hashPass(PASS), process.env.OWNER_DISCORD_ID || '0', 'dono');
     console.log(`[Dashboard] Conta dono criada: ${OWNER} / ${PASS}`);
   }
+  // Garantir que o usuário dono sempre tem cargo=dono (proteção contra alteração indevida)
+  db.prepare("UPDATE dash_usuarios SET cargo='dono' WHERE username=?").run(OWNER);
 
   console.log('[Dashboard] ✅ Banco do dashboard inicializado.');
 }
