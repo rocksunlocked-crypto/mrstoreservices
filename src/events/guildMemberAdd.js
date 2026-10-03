@@ -27,6 +27,18 @@ module.exports = {
       client.inviteCache.set(guild.id, new Map(invitesNovos.map(i => [i.code, i.uses])));
 
       if (inviterUsado && inviterUsado.id !== member.id && !inviterUsado.bot) {
+        // Verificar se esse convidado já ganhou coins antes (evita farm)
+        const { db } = require('../database/database');
+        const { v4: uuidv4 } = require('uuid');
+        const jaRegistrado = db.prepare('SELECT 1 FROM convites WHERE convidado_id=?').get(member.id);
+        if (jaRegistrado) {
+          console.log(`[Convite] ${member.user.tag} já foi registrado anteriormente — sem coins.`);
+          return;
+        }
+
+        // Registrar convite
+        db.prepare('INSERT INTO convites (id, convidador_id, convidado_id, coins_ganhos) VALUES (?,?,?,?)').run(uuidv4(), inviterUsado.id, member.id, 5);
+
         Usuarios.garantir(inviterUsado.id, inviterUsado.username);
         const novoSaldo = addCoins(inviterUsado.id, 5, `Convite (link Discord) de ${member.user.tag}`);
         const convidador = await guild.members.fetch(inviterUsado.id).catch(() => null);
