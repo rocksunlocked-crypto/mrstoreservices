@@ -1543,7 +1543,15 @@ router.get('/gerenciar', auth.middlewareAba('gerenciar'), (req, res) => {
           ${podeEditar ? `
           <form method="POST" action="/painel/gerenciar/usuarios/${u.id}/cargo" style="display:flex;gap:4px">
             <select class="form-control" name="cargo" style="width:115px;height:28px;font-size:11px;padding:2px 8px">
-              ${CARGOS.map(c=>`<option value="${c}" ${u.cargo===c?'selected':''}>${c}</option>`).join('')}
+              ${CARGOS
+                .filter(c => {
+                  // Dono não aparece na lista para ninguém exceto o próprio dono editando
+                  if (c === 'dono') return user.cargo === 'dono';
+                  // sub_dono não pode promover a sub_dono outros usuários
+                  if (c === 'sub_dono') return user.cargo === 'dono';
+                  return true;
+                })
+                .map(c=>`<option value="${c}" ${u.cargo===c?'selected':''}>${c}</option>`).join('')}
             </select>
             <button class="btn btn-sm btn-ghost" type="submit" title="Salvar cargo">💾</button>
           </form>` : `<span class="badge badge-gray" style="font-size:10px">${ci.label}</span>`}
@@ -1634,8 +1642,30 @@ router.post('/gerenciar/usuarios/:id/recusar', auth.middlewareAba('gerenciar'), 
   dashDb.recusarUsuario(req.params.id); res.redirect('/painel/gerenciar?msg=ok');
 });
 router.post('/gerenciar/usuarios/:id/cargo', auth.middlewareAba('gerenciar'), express.urlencoded({extended:false}), (req, res) => {
-  const cargo = req.body.cargo;
-  if (CARGOS.includes(cargo)) dashDb.mudarCargo(req.params.id, cargo);
+  const solicitante = req.dashUser;
+  const novoCargo   = req.body.cargo;
+  if (!CARGOS.includes(novoCargo)) return res.redirect('/painel/gerenciar?msg=err');
+
+  const alvo = dashDb.getUsuario(req.params.id);
+  if (!alvo) return res.redirect('/painel/gerenciar?msg=err');
+
+  // Regra 1: ninguém muda o cargo de um dono exceto outro dono
+  if (alvo.cargo === 'dono' && solicitante.cargo !== 'dono')
+    return res.redirect('/painel/gerenciar?msg=err');
+
+  // Regra 2: ninguém promove para dono exceto outro dono
+  if (novoCargo === 'dono' && solicitante.cargo !== 'dono')
+    return res.redirect('/painel/gerenciar?msg=err');
+
+  // Regra 3: sub_dono não pode promover para sub_dono nem dono
+  if (solicitante.cargo === 'sub_dono' && ['sub_dono','dono'].includes(novoCargo))
+    return res.redirect('/painel/gerenciar?msg=err');
+
+  // Regra 4: não pode mudar o próprio cargo
+  if (alvo.id === solicitante.id)
+    return res.redirect('/painel/gerenciar?msg=err');
+
+  dashDb.mudarCargo(req.params.id, novoCargo);
   res.redirect('/painel/gerenciar?msg=ok');
 });
 router.post('/gerenciar/usuarios/:id/reset-ip', auth.middlewareAba('gerenciar'), (req, res) => {
