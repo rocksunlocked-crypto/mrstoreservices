@@ -85,11 +85,11 @@ async function criarCobrancaPix({ valor, descricao, pedidoId, nomeCliente, cpf }
   const agent = getAgent();
 
   const payload = {
-    calendario: { expiracao: 1800 }, // 30 minutos
-    devedor: cpf ? {
-      cpf: cpf.replace(/\D/g, ''),
+    calendario: { expiracao: 1800 },
+    devedor: {
+      cpf:  cpf ? cpf.replace(/\D/g, '') : '09772166240',
       nome: nomeCliente || 'Cliente',
-    } : undefined,
+    },
     valor: { original: Number(valor).toFixed(2) },
     chave: config.efi.pixKey,
     solicitacaoPagador: descricao || 'Máximo Store',
