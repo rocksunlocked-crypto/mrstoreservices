@@ -502,10 +502,16 @@ async function chamarStaffViaPix(interaction, ticket, ticketId) {
       const qr = await efi.gerarQRCode(cobr.locId);
       qrcode   = qr.qrcode;
       imagemQr = qr.imagemQrcode || qr.linkVisualizacao || null;
+      console.log('[Chamar Staff PIX] QR gerado com sucesso');
     } catch (qrErr) {
-      console.warn('[Chamar Staff PIX] QR Code falhou, usando location:', qrErr.message);
-      qrcode = cobr.location || cobr.txid;
+      console.warn('[Chamar Staff PIX] QR Code falhou:', qrErr.message, '— usando txid como fallback');
+      // Usar o txid diretamente — o usuário pode copiar e colar no app do banco
+      qrcode = cobr.txid;
+      imagemQr = null;
     }
+
+    // Se nem o txid veio, abortar
+    if (!qrcode) throw new Error('Não foi possível gerar o código PIX.');
 
     const embed = new EmbedBuilder()
       .setColor(config.colors.pix)

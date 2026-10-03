@@ -127,20 +127,21 @@ async function gerarQRCode(locId) {
   const token = await getToken();
   const agent = getAgent();
 
-  const res = await axios.get(
-    `${baseURL()}/v2/loc/${locId}/qrcode`,
-    { headers: headers(token), httpsAgent: agent }
-  ).catch(err => {
+  try {
+    const res = await axios.get(
+      `${baseURL()}/v2/loc/${locId}/qrcode`,
+      { headers: headers(token), httpsAgent: agent }
+    );
+    return {
+      qrcode:           res.data.qrcode,
+      imagemQrcode:     res.data.imagemQrcode,
+      linkVisualizacao: res.data.linkVisualizacao,
+    };
+  } catch (err) {
     const detalhe = err.response?.data ? JSON.stringify(err.response.data) : err.message;
     console.error('[EFI QRCode] Erro locId', locId, ':', detalhe);
     throw new Error(detalhe);
-  });
-
-  return {
-    qrcode:           res.data.qrcode,
-    imagemQrcode:     res.data.imagemQrcode,
-    linkVisualizacao: res.data.linkVisualizacao,
-  };
+  }
 }
 
 // ─── Consultar status de cobrança ─────────────────────────────────────────────
