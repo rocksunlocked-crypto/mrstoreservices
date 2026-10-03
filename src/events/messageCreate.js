@@ -429,6 +429,70 @@ module.exports = {
       }
     }
 
+    // ── Comando !recuperar-variante (devolver itens da variante por tempo) ─────
+    if (message.content.toLowerCase().startsWith('!recuperar-variante')) {
+      const args = message.content.trim().split(/\s+/);
+      if (args.length < 2) return message.reply('Uso: `!recuperar-variante <variante_id> [horas=3]`\nExemplo: `!recuperar-variante 09752ecc 3`');
+      
+      const varianteId = args[1];
+      const horas = parseInt(args[2]) || 3;
+      const { db } = require('../database/database');
+      
+      // Buscar variante
+      const variantes = db.prepare('SELECT * FROM variantes_produto WHERE id LIKE ?').all(`${varianteId}%`);
+      if (!variantes.length) return message.reply(`❌ Variante \`${varianteId}\` não encontrada.`);
+      const variante = variantes[0];
+      
+      // Calcular timestamp (agora - N horas)
+      const tempoLimite = Math.floor(Date.now() / 1000) - (horas * 3600);
+      
+      // Buscar itens consumidos da variante nas últimas N horas
+      const itensConsumidos = db.prepare(`
+        SELECT * FROM estoque_digital 
+        WHERE variante_id=? AND usado=1 AND usado_em >= ?
+        ORDER BY usado_em DESC
+      `).all(variante.id, tempoLimite);
+      
+      if (!itensConsumidos.length) {
+        return message.reply(`❌ Nenhum item consumido da variante **${variante.nome}** nas últimas **${horas}h**.`);
+      }
+      
+      // Devolver todos os itens ao estoque
+      let devolvidos = 0;
+      for (const item of itensConsumidos) {
+        db.prepare('UPDATE estoque_digital SET usado=0, usado_por=NULL, usado_em=NULL, pedido_id=NULL WHERE id=?').run(item.id);
+        devolvidos++;
+      }
+      
+      // Atualizar contador de estoque do produto
+      const estoqueTotal = db.prepare('SELECT COUNT(*) as c FROM estoque_digital WHERE produto_id=? AND usado=0').get(variante.produto_id).c;
+      db.prepare('UPDATE produtos SET estoque=? WHERE id=?').run(estoqueTotal, variante.produto_id);
+      
+      const embed = new EmbedBuilder()
+        .setColor(0x00FF88)
+        .setTitle('♻️ Itens Recuperados')
+        .setDescription([
+          `✅ **${devolvidos} item(ns)** devolvido(s) ao estoque!`,
+          ``,
+          `📦 **Variante:** ${variante.nome}`,
+          `⏰ **Período:** últimas ${horas}h`,
+          `📊 **Estoque atual:** ${estoqueTotal} itens disponíveis`,
+        ].join('\n'))
+        .setTimestamp();
+      
+      // Mostrar preview dos itens recuperados (primeiros 5)
+      if (devolvidos > 0) {
+        const preview = itensConsumidos.slice(0, 5).map((item, i) => {
+          const usadoEm = new Date(item.usado_em * 1000).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+          const conteudoPreview = item.conteudo.slice(0, 30) + (item.conteudo.length > 30 ? '...' : '');
+          return `\`${i+1}.\` \`${conteudoPreview}\` (usado em ${usadoEm})`;
+        }).join('\n');
+        embed.addFields({ name: '🔍 Preview dos Itens', value: preview + (devolvidos > 5 ? `\n... e mais ${devolvidos - 5}` : ''), inline: false });
+      }
+      
+      return message.reply({ embeds: [embed] });
+    }
+
     // ── Comando !coins (qualquer usuário) ──────────────────────────────────
     if (message.content.toLowerCase() === '!coins') {
       const usuario = Usuarios.garantir(message.author.id, message.author.username);
