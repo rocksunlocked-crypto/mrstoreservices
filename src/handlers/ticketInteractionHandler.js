@@ -737,6 +737,12 @@ async function gerarPixAdmin(interaction, ticketId, produto, valorTotal) {
     // Salvar txid no pedido
     dbMain.prepare("UPDATE pedidos SET tx_id=? WHERE id=?").run(cobr.txid, pedidoId);
 
+    // Gerar QR Code como buffer (igual ao carrinho)
+    const { AttachmentBuilder: AB } = require('discord.js');
+    const QRCode = require('qrcode');
+    let qrBuf = null;
+    try { qrBuf = await QRCode.toBuffer(qr.qrcode, { width: 300, margin: 2 }); } catch {}
+
     const embed = new EmbedBuilder()
       .setColor(config.colors.pix)
       .setTitle('💸 Cobrança PIX')
@@ -748,11 +754,12 @@ async function gerarPixAdmin(interaction, ticketId, produto, valorTotal) {
         { name: '🎫 Ticket',     value: `\`${ticketId}\``,                   inline: true  },
         { name: '🆔 Pedido',     value: `\`${pedidoId.slice(0,8).toUpperCase()}\``, inline: true },
         { name: '✋ Gerado por', value: `<@${atendente}>`,                   inline: true  },
-        { name: '📋 Pix Copia e Cola', value: `\`\`\`${qr.qrcode}\`\`\`` },
+        { name: '📋 Pix Copia e Cola', value: `\`\`\`${qr.qrcode.slice(0,200)}\`\`\`` },
       )
-      .setImage(qr.imagemQrcode || qr.linkVisualizacao || null)
       .setFooter({ text: 'MrStore • Aguardando pagamento...' })
       .setTimestamp();
+
+    if (qrBuf) embed.setImage('attachment://qrcode.png');
 
     const row = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
@@ -761,7 +768,10 @@ async function gerarPixAdmin(interaction, ticketId, produto, valorTotal) {
         .setStyle(ButtonStyle.Success),
     );
 
-    await interaction.channel.send({ embeds: [embed], components: [row] });
+    const payload = { embeds: [embed], components: [row] };
+    if (qrBuf) payload.files = [new AB(qrBuf, { name: 'qrcode.png' })];
+
+    await interaction.channel.send(payload);
     await interaction.editReply({ embeds: [successEmbed('✅ QR Code PIX gerado no canal!')] });
 
     // Polling automático — ao confirmar, marca pago e dispara log de vendas
