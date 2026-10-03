@@ -499,6 +499,7 @@ async function chamarStaffViaPix(interaction, ticket, ticketId) {
     // Usar location direto — funciona sem precisar do endpoint de QR Code
     // O location é uma URL pública que qualquer app de banco aceita como Pix Copia e Cola
     const pixCopiaCola = cobr.location || cobr.txid || pedidoId;
+    console.log('[Chamar Staff PIX] pixCopiaCola:', pixCopiaCola);
     let imagemQr = null;
 
     // Tentar QR Code — mas não é crítico
@@ -509,9 +510,10 @@ async function chamarStaffViaPix(interaction, ticket, ticketId) {
           imagemQr = qr.imagemQrcode || null;
         }
       } catch (qrErr) {
-        console.warn('[Chamar Staff PIX] QR opcional falhou:', qrErr.message);
+        console.warn('[Chamar Staff PIX] QR opcional falhou (ignorado):', qrErr.message);
       }
     }
+    console.log('[Chamar Staff PIX] prosseguindo com embed...');
 
     const embed = new EmbedBuilder()
       .setColor(config.colors.pix)
