@@ -571,6 +571,18 @@ async function entregarProduto(pedido, client) {
       }
     } catch {}
 
+    // Dar cargo configurado no carrinho (se houver)
+    try {
+      const cargoId = db.prepare('SELECT cargo_discord_id FROM produtos WHERE id=?').get(produto.id)?.cargo_discord_id;
+      if (cargoId) {
+        const memberCargo = await guild.members.fetch(pedido.usuario_id).catch(() => null);
+        if (memberCargo) {
+          await memberCargo.roles.add(cargoId).catch(e => console.error('[Cargo Produto]', e.message));
+          console.log(`[Cargo Produto] Cargo ${cargoId} dado para ${pedido.usuario_id} ao comprar ${produto.nome}`);
+        }
+      }
+    } catch (e) { console.error('[Cargo Produto]', e.message); }
+
     const member = await guild.members.fetch(pedido.usuario_id).catch(() => null);
     if (!member) return;
 

@@ -2499,7 +2499,6 @@ router.post('/produtos/:id/toggle', auth.middlewareAba('config_mr'), (req, res) 
 });
 
 // ─── CARRINHOS ───────────────────────────────────────────────
-// Lista produtos com IDs e variantes — útil quando o Discord não carrega
 router.get('/carrinhos', auth.middlewareAba('carrinhos'), (req, res) => {
   const { db } = getMainDb();
   const user   = req.dashUser;
@@ -2508,8 +2507,12 @@ router.get('/carrinhos', auth.middlewareAba('carrinhos'), (req, res) => {
   const msg    = req.query.msg || '';
   const podeEditar = ['sub_dono','dono','resp_staff'].includes(user.cargo);
 
-  const where  = search ? `WHERE p.nome LIKE '%${search.replace(/'/g,"''")}%' AND p.ativo=1` : 'WHERE p.ativo=1';
-  const produtos = db.prepare(`SELECT * FROM produtos ${where} ORDER BY p.categoria ASC, p.nome ASC`).all();
+  // Garantir coluna cargo_discord_id existe
+  try { db.exec('ALTER TABLE produtos ADD COLUMN cargo_discord_id TEXT'); } catch {}
+
+  const produtos = search
+    ? db.prepare("SELECT * FROM produtos WHERE nome LIKE ? AND ativo=1 ORDER BY categoria ASC, nome ASC").all(`%${search}%`)
+    : db.prepare("SELECT * FROM produtos WHERE ativo=1 ORDER BY categoria ASC, nome ASC").all();
 
   // Se um produto foi selecionado, carrega suas variantes e estoque
   let variantesHtml = '';
@@ -2517,8 +2520,9 @@ router.get('/carrinhos', auth.middlewareAba('carrinhos'), (req, res) => {
   if (prodId) {
     produtoSel = db.prepare('SELECT * FROM produtos WHERE id=?').get(prodId);
     if (produtoSel) {
-      const variantes = db.prepare('SELECT * FROM variantes_produto WHERE produto_id=? ORDER BY ordem ASC').all(prodId);
-      const painel    = db.prepare('SELECT canal_id, mensagem_id FROM paineis_canal WHERE produto_id=?').get(prodId);
+      const variantes  = db.prepare('SELECT * FROM variantes_produto WHERE produto_id=? ORDER BY ordem ASC').all(prodId);
+      const painel     = db.prepare('SELECT canal_id, mensagem_id FROM paineis_canal WHERE produto_id=?').get(prodId);
+      const cargoAtual = produtoSel.cargo_discord_id || '';
       variantesHtml = `
         <div class="table-card" style="margin-top:20px">
           <div class="table-head">
@@ -2531,6 +2535,20 @@ router.get('/carrinhos', auth.middlewareAba('carrinhos'), (req, res) => {
             </div>
             ${podeEditar ? `<a href="/painel/carrinhos/editar?produto=${prodId}" class="btn btn-sm btn-primary">✏️ Editar Plano</a>` : ''}
           </div>
+
+          ${podeEditar ? `
+          <div style="padding:14px 20px;border-bottom:1px solid var(--border);background:rgba(109,40,217,0.05)">
+            <form method="POST" action="/painel/carrinhos/cargo" style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
+              <input type="hidden" name="produto_id" value="${prodId}">
+              <div class="form-group" style="flex:1;margin:0;min-width:220px">
+                <label>🎖️ Cargo ao comprar (ID do Discord)</label>
+                <input class="form-control" name="cargo_discord_id" value="${cargoAtual}" placeholder="Ex: 1522457009931419748 (vazio = sem cargo)">
+              </div>
+              <button class="btn btn-primary btn-sm" type="submit" style="padding:10px 18px">💾 Salvar</button>
+              ${cargoAtual ? `<span style="font-size:12px;color:#00e87a;align-self:center">✅ <code>${cargoAtual}</code></span>` : `<span style="font-size:12px;color:#5a5a90;align-self:center">Sem cargo</span>`}
+            </form>
+          </div>` : cargoAtual ? `<div style="padding:10px 20px;font-size:12px;color:#00e87a;border-bottom:1px solid var(--border)">🎖️ Cargo: <code>${cargoAtual}</code></div>` : ''}
+
           ${variantes.length === 0 ? `<div style="padding:24px;text-align:center;color:#5a5a90">Nenhuma variante encontrada.</div>` : `
           <table>
             <tr><th>Nome do Plano</th><th>ID da Variante</th><th>Preço</th><th>Estoque</th><th>Status</th></tr>
@@ -2538,7 +2556,7 @@ router.get('/carrinhos', auth.middlewareAba('carrinhos'), (req, res) => {
               const est = db.prepare('SELECT COUNT(*) as c FROM estoque_variante WHERE variante_id=? AND usado=0').get(v.id)?.c || 0;
               return `<tr>
                 <td style="font-weight:600;color:#fff">${v.nome}</td>
-                <td><code style="font-size:11px;color:#a78bfa;user-select:all;cursor:copy" onclick="navigator.clipboard.writeText('${v.id}');this.textContent='✅ Copiado!';setTimeout(()=>this.textContent='${v.id}',1500)">${v.id}</code></td>
+                <td><code style="font-size:11px;color:#a78bfa;user-select:all;cursor:pointer" title="Clique para copiar" onclick="navigator.clipboard.writeText('${v.id}');this.textContent='✅ Copiado!';setTimeout(()=>this.textContent='${v.id}',1500)">${v.id}</code></td>
                 <td style="color:#00e87a;font-weight:600">${fmtMoeda(v.preco)}</td>
                 <td>${v.estoque === -1 ? '∞ Ilimitado' : `${est} disponíveis`}</td>
                 <td>${badge(v.ativo ? 'ativo' : 'inativo')}</td>
@@ -2581,6 +2599,18 @@ router.get('/carrinhos', auth.middlewareAba('carrinhos'), (req, res) => {
     ${variantesHtml}`;
 
   res.send(layout(user, '🛒 Carrinhos', body, 'carrinhos'));
+});
+
+router.post('/carrinhos/cargo', auth.middlewareAba('carrinhos'), express.urlencoded({extended:false}), (req, res) => {
+  const user = req.dashUser;
+  if (!['sub_dono','dono','resp_staff'].includes(user.cargo)) return res.redirect('/painel/carrinhos');
+  const { db } = getMainDb();
+  const { produto_id, cargo_discord_id } = req.body;
+  try {
+    db.prepare('ALTER TABLE produtos ADD COLUMN cargo_discord_id TEXT').run();
+  } catch {}
+  db.prepare("UPDATE produtos SET cargo_discord_id=? WHERE id=?").run(cargo_discord_id?.trim() || null, produto_id);
+  res.redirect(`/painel/carrinhos?produto=${produto_id}&msg=ok`);
 });
 
 // ─── CARRINHOS — Editar plano (variante) ─────────────────────
