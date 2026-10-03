@@ -613,6 +613,8 @@ async function entregarProduto(pedido, client) {
       .setTimestamp()
       .setFooter({ text: t('delivery_footer', idioma) });
 
+    let urlDownload = null; // Guardar URL do download para adicionar botão depois
+
     if (conteudo && conteudo !== '⚠️ Entrega manual — nossa equipe entrará em contato via ticket.' && conteudo !== '⚠️ ABRIR TICKET PRA RESGATAR') {
       // Se quantidade >= 10, salvar como arquivo txt e enviar link de download
       if (qtd >= 10) {
@@ -626,11 +628,8 @@ async function entregarProduto(pedido, client) {
           const header = `=== ${produto.nome} ===\nPedido: ${pedido.id.slice(0,8).toUpperCase()}\nData: ${new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}\nQuantidade: ${qtd}\n${'='.repeat(40)}\n\n`;
           fs.writeFileSync(path.join(dir, `${token}.txt`), header + conteudo, 'utf-8');
           const baseUrl  = process.env.BOT_URL || 'https://mrstoreservices.up.railway.app';
-          const urlDownload = `${baseUrl}/download/${token}`;
+          urlDownload = `${baseUrl}/download/${token}`;
           embed.addFields({ name: '📥 Seu Arquivo', value: `[Clique aqui para baixar seus ${qtd} itens](${urlDownload})\n> Link válido por **48 horas**`, inline: false });
-          row.addComponents(
-            new ButtonBuilder().setLabel('📥 Baixar Arquivo').setStyle(ButtonStyle.Link).setURL(urlDownload),
-          );
         } catch (e) {
           console.error('[Download TXT]', e.message);
           // Fallback: mostrar no embed normalmente
@@ -671,11 +670,19 @@ async function entregarProduto(pedido, client) {
       });
     }
 
+    // Criar row DEPOIS de processar o conteúdo
     const row = new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId(`confirmar_entrega_${pedido.id}`).setLabel(t('delivery_confirm', idioma)).setStyle(ButtonStyle.Success),
       new ButtonBuilder().setCustomId(`avaliar_${pedido.id}`).setLabel(t('delivery_rate', idioma)).setStyle(ButtonStyle.Secondary),
       btnIdioma(idioma),
     );
+
+    // Adicionar botão de download se houver URL
+    if (urlDownload) {
+      row.addComponents(
+        new ButtonBuilder().setLabel('📥 Baixar Arquivo').setStyle(ButtonStyle.Link).setURL(urlDownload),
+      );
+    }
 
     // Buscar transcript do ticket se existir
     const { criarBotaoTranscript, montarEmbedSugestao } = require('../utils/dmHelpers');

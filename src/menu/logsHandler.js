@@ -7,8 +7,9 @@
 const { EmbedBuilder } = require('discord.js');
 const config = require('../config');
 
-// ─── Canal de logs (usa config.channels.logChannel) ───────────────────────────
-const CANAL_LOGS = config.channels.logChannel;
+// ─── Canais de logs especializados ────────────────────────────────────────────
+const CANAL_LOGS_GERAL = config.channels.logChannel;           // 1524326072701681664 - só entrada/saída
+const CANAL_LOGS_COMPRAS = config.channels.salesChannel || CANAL_LOGS_GERAL; // compras vai pra outro canal
 
 const CORES = {
   anuncio:          0x5865F2,
@@ -54,7 +55,17 @@ const ICONES = {
  */
 async function log(client, guild, tipo, dados = {}) {
   try {
-    const canal = guild?.channels?.cache?.get(CANAL_LOGS);
+    // Escolher canal baseado no tipo de log
+    let canalId;
+    if (tipo === 'compra') {
+      canalId = CANAL_LOGS_COMPRAS; // Compras vão para canal de vendas
+    } else if (tipo === 'membro_entrou' || tipo === 'membro_saiu') {
+      canalId = CANAL_LOGS_GERAL; // Entrada/saída vai pro canal geral
+    } else {
+      canalId = CANAL_LOGS_GERAL; // Outros logs vão pro canal geral
+    }
+
+    const canal = guild?.channels?.cache?.get(canalId);
     if (!canal) return;
 
     const icone = ICONES[tipo] ?? '📋';
@@ -82,4 +93,4 @@ async function log(client, guild, tipo, dados = {}) {
   }
 }
 
-module.exports = { log, CANAL_LOGS };
+module.exports = { log, CANAL_LOGS: CANAL_LOGS_GERAL };
