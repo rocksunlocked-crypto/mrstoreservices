@@ -97,6 +97,49 @@ module.exports = {
   async execute(message) {
     if (message.author.bot) return;
 
+    // ── Anti-spam: links de convite por membros sem cargo mínimo ──────────────
+    if (message.guild && !message.member.permissions.has('ManageMessages')) {
+      const hasInvite = /discord\.gg\/|discord\.com\/invite\//i.test(message.content);
+      if (hasInvite) {
+        const cargoMinimo = '1522464995118886942'; // ID do cargo mínimo que pode enviar convites
+        const temCargo = message.member.roles.cache.has(cargoMinimo) || message.member.roles.highest.position >= (message.guild.roles.cache.get(cargoMinimo)?.position ?? 0);
+        if (!temCargo) {
+          try {
+            await message.delete();
+            await message.member.timeout(3 * 24 * 60 * 60 * 1000, 'Envio de link de convite sem permissão');
+            await message.channel.send(`<@${message.author.id}> foi punido por **3 dias** por enviar link de convite sem permissão.`).then(m => setTimeout(() => m.delete(), 5000));
+            const { log: logMr } = require('../menu/logsHandler');
+            logMr(message.client, message.guild, 'punição', {
+              acao: '🔨 Timeout Aplicado',
+              alvo: `<@${message.author.id}>`,
+              detalhes: `Motivo: Link de convite sem cargo mínimo\nDuração: 3 dias`,
+            });
+          } catch {}
+          return;
+        }
+      }
+    }
+
+    // ── Anti-spam: 4+ imagens + menção @everyone/@here ────────────────────────
+    if (message.guild && !message.member.permissions.has('ManageMessages')) {
+      const numImagens = message.attachments.filter(a => a.contentType?.startsWith('image/')).size;
+      const temMencao = /@(everyone|here)/i.test(message.content);
+      if (numImagens >= 4 && temMencao) {
+        try {
+          await message.delete();
+          await message.member.timeout(3 * 24 * 60 * 60 * 1000, 'Spam de imagens com menção');
+          await message.channel.send(`<@${message.author.id}> foi punido por **3 dias** por spam de imagens com menção.`).then(m => setTimeout(() => m.delete(), 5000));
+          const { log: logMr } = require('../menu/logsHandler');
+          logMr(message.client, message.guild, 'punição', {
+            acao: '🔨 Timeout Aplicado',
+            alvo: `<@${message.author.id}>`,
+            detalhes: `Motivo: ${numImagens} imagens + menção @everyone/@here\nDuração: 3 dias`,
+          });
+        } catch {}
+        return;
+      }
+    }
+
     const comando = message.content.trim().toLowerCase();
 
     // ── !importar — importa banco via arquivo anexado ─────────────────────

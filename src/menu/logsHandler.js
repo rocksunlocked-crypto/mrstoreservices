@@ -5,9 +5,10 @@
  */
 
 const { EmbedBuilder } = require('discord.js');
+const config = require('../config');
 
-// ─── Canal de logs (crie um canal privado e coloque o ID aqui) ────────────────
-const CANAL_LOGS = '1522518229093875793'; // #logs-bot
+// ─── Canal de logs (usa config.channels.logChannel) ───────────────────────────
+const CANAL_LOGS = config.channels.logChannel;
 
 const CORES = {
   anuncio:          0x5865F2,
