@@ -397,6 +397,38 @@ module.exports = {
       return message.reply({ embeds: [embed] });
     }
 
+    // ── Comando !recuperar (devolver item e reprocessar pedido) ────────────────
+    if (message.content.toLowerCase().startsWith('!recuperar')) {
+      const args = message.content.trim().split(/\s+/);
+      if (args.length < 2) return message.reply('Uso: `!recuperar <pedido_id_8chars>`');
+      
+      const pedidoId = args[1].toUpperCase();
+      const { db, Pedidos } = require('../database/database');
+      const pedidos = db.prepare('SELECT * FROM pedidos WHERE id LIKE ?').all(`${pedidoId}%`);
+      if (!pedidos.length) return message.reply(`❌ Pedido \`${pedidoId}\` não encontrado.`);
+      
+      const pedido = pedidos[0];
+      
+      // Devolver item ao estoque se foi usado
+      const itemUsado = db.prepare('SELECT * FROM estoque_digital WHERE pedido_id=? AND usado=1').get(pedido.id);
+      if (itemUsado) {
+        db.prepare('UPDATE estoque_digital SET usado=0, usado_por=NULL, usado_em=NULL, pedido_id=NULL WHERE id=?').run(itemUsado.id);
+        await message.reply(`✅ Item devolvido: \`${itemUsado.conteudo.slice(0,50)}\``);
+      }
+      
+      // Marcar pedido como pago (não entregue) para reprocessar
+      db.prepare("UPDATE pedidos SET status='pago' WHERE id=?").run(pedido.id);
+      
+      // Reprocessar entrega
+      try {
+        const { processarEntrega } = require('../systems/loja');
+        await processarEntrega(Pedidos.get(pedido.id), message.client);
+        return message.reply(`✅ Pedido \`${pedidoId}\` reprocessado e entregue!`);
+      } catch (e) {
+        return message.reply(`❌ Erro ao reprocessar: ${e.message}`);
+      }
+    }
+
     // ── Comando !coins (qualquer usuário) ──────────────────────────────────
     if (message.content.toLowerCase() === '!coins') {
       const usuario = Usuarios.garantir(message.author.id, message.author.username);
