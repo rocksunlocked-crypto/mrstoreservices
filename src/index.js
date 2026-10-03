@@ -734,7 +734,8 @@ client.on('interactionCreate', async (interaction) => {
         || id.startsWith('modal_pix_chamada_')
         || id.startsWith('modal_close_ticket_')
         || id.startsWith('modal_note_')
-        || id.startsWith('modal_rename_')) {
+        || id.startsWith('modal_rename_')
+        || id.startsWith('modal_rating_')) {
         return handleTicketInteraction(interaction);
       }
 
