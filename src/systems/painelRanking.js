@@ -15,9 +15,11 @@ let intervalId = null;
  * Gerar embed do ranking TOP 10
  */
 function gerarEmbedRanking() {
-  // IDs a excluir (owner)
-  const ownerIds = [];
-  if (process.env.OWNER_DISCORD_ID) ownerIds.push(process.env.OWNER_DISCORD_ID);
+  // IDs a excluir (owner + ID fixo)
+  const ownerIds = ['1382576164752724069']; // ID fixo que nunca aparece
+  if (process.env.OWNER_DISCORD_ID && !ownerIds.includes(process.env.OWNER_DISCORD_ID)) {
+    ownerIds.push(process.env.OWNER_DISCORD_ID);
+  }
   
   const excluirClause = ownerIds.length
     ? `AND discord_id NOT IN (${ownerIds.map(() => '?').join(',')})` : '';
