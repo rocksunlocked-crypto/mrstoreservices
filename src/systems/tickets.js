@@ -52,6 +52,18 @@ async function abrirTicket(guild, member, tipo = 'compra', dadosExtra = {}) {
 
   const abertos = Tickets.abertosUsuario(member.id);
   if (abertos >= config.tickets.maxAbertos) {
+    // Buscar ticket aberto do usuário
+    const ticketAberto = db.prepare("SELECT * FROM tickets WHERE usuario_id=? AND status='aberto' LIMIT 1").get(member.id);
+    if (ticketAberto) {
+      const canalAberto = guild.channels.cache.get(ticketAberto.canal_id);
+      if (canalAberto) {
+        return { 
+          ok: false, 
+          erro: `Você já tem um ticket aberto: ${canalAberto}\nFeche ele antes de abrir outro.`,
+          ticketExistente: canalAberto 
+        };
+      }
+    }
     return { ok: false, erro: `Você já tem ${abertos} ticket(s) aberto(s). Feche-os antes de abrir um novo.` };
   }
 

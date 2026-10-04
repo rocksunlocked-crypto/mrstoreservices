@@ -5,12 +5,13 @@ const config = require('../../config');
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('ranking')
-    .setDescription('🏆 Ver ranking de compradores e afiliados')
+    .setDescription('🏆 Ver ranking de clientes e afiliados')
     .setDefaultMemberPermissions('0')
     .addStringOption(o =>
       o.setName('tipo')
        .setDescription('Tipo de ranking')
        .addChoices(
+         { name: '👑 TOP 10 Clientes VIP', value: 'clientes' },
          { name: '💰 Maiores Compradores', value: 'gasto' },
          { name: '🛒 Mais Compras', value: 'compras' },
          { name: '⭐ Mais Pontos', value: 'pontos' },
@@ -20,7 +21,7 @@ module.exports = {
   cooldown: 10,
   async execute(interaction) {
     await interaction.deferReply();
-    const tipo = interaction.options.getString('tipo') || 'gasto';
+    const tipo = interaction.options.getString('tipo') || 'clientes';
 
     // IDs a excluir do ranking (owner)
     const ownerIds = [];
@@ -33,7 +34,12 @@ module.exports = {
       ? `AND discord_id NOT IN (${ownerIds.map(() => '?').join(',')})` : '';
 
     let usuarios, titulo, campo;
-    if (tipo === 'gasto') {
+    if (tipo === 'clientes') {
+      // TOP 10 Clientes VIP — sem mostrar valores
+      usuarios = db.prepare(`SELECT * FROM usuarios WHERE 1=1 ${excluirClause} ORDER BY total_gasto DESC LIMIT 10`).all(...ownerIds);
+      titulo = '👑 TOP 10 — Clientes VIP';
+      campo = u => `${u.total_compras || 0} compras • Nível ${u.nivel || 'Bronze'}`;
+    } else if (tipo === 'gasto') {
       usuarios = db.prepare(`SELECT * FROM usuarios WHERE 1=1 ${excluirClause} ORDER BY total_gasto DESC LIMIT 10`).all(...ownerIds);
       titulo = '💰 Top 10 — Maiores Compradores';
       campo = u => `R$ ${(u.total_gasto || 0).toFixed(2)} gastos`;

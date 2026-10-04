@@ -156,10 +156,27 @@ async function iniciarCompra(interaction, produtoId, cupomCodigo = null) {
   const { abrirTicket } = require('./tickets');
   const memberObj = interaction.member
     || await interaction.guild?.members.fetch(interaction.user.id).catch(() => null);
-  const { ok, canal } = await abrirTicket(interaction.guild, memberObj, 'compra', {
+  const { ok, canal, ticketExistente } = await abrirTicket(interaction.guild, memberObj, 'compra', {
     pedidoId, produtoId, produto: produto.nome, valor: precoFinal,
     usuarioId: interaction.user.id,
   });
+  
+  // Se já tem ticket aberto, redirecionar
+  if (!ok && ticketExistente) {
+    return interaction.editReply({
+      embeds: [new EmbedBuilder()
+        .setColor(0xFFAA00)
+        .setTitle('⚠️ Ticket Já Aberto')
+        .setDescription(`Você já tem um ticket aberto: ${ticketExistente}\nFinalize ele antes de fazer outra compra.`)],
+      components: [new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setLabel('🎫 Ir para o Ticket')
+          .setStyle(ButtonStyle.Link)
+          .setURL(`https://discord.com/channels/${interaction.guild?.id}/${ticketExistente.id}`),
+      )],
+    });
+  }
+  
   if (ok) Pedidos.atualizar(pedidoId, { ticket_id: canal.id });
 
   if (ok && canal) {
