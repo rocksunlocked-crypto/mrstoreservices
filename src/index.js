@@ -205,6 +205,10 @@ client.once('ready', async () => {
     const { enviarPainel2FA } = require('./systems/painel2FA');
     enviarPainel2FA(client).catch(() => {});
 
+    // Painel de Ranking fixo (atualiza a cada 2s)
+    const { iniciarPainelRanking } = require('./systems/painelRanking');
+    setTimeout(() => iniciarPainelRanking(client), 5000); // Aguarda 5s após bot ficar pronto
+
     // Atualizar painel de tickets imediatamente (fora do setTimeout)
     setTimeout(async () => {
       try {
