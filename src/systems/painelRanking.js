@@ -34,12 +34,12 @@ function gerarEmbedRanking() {
   const embed = new EmbedBuilder()
     .setColor(0xFFD700) // Dourado
     .setTitle('👑 TOP 10 — Clientes VIP')
-    .setDescription('*Os maiores contribuidores da loja*\n*Atualizado em tempo real*')
+    .setThumbnail('https://i.imgur.com/AfFp7pu.png') // Logo da loja (opcional)
     .setTimestamp()
     .setFooter({ text: 'Máximo Store • Ranking de Clientes' });
 
   if (!usuarios.length) {
-    embed.setDescription('*Nenhum cliente ainda.*\n*Seja o primeiro a comprar!*');
+    embed.setDescription('```ansi\n\x1b[33m⭐ Nenhum cliente ainda.\n\x1b[0mSeja o primeiro a comprar!\n```');
   } else {
     const nivelEmoji = n => {
       const niveis = {
@@ -53,15 +53,16 @@ function gerarEmbedRanking() {
 
     const linhas = usuarios.map((u, i) => {
       const emoji = nivelEmoji(u.nivel || 'Bronze');
-      const compras = u.total_compras || 0;
       const nivel = u.nivel || 'Bronze';
-      const nome = u.nome || 'Desconhecido';
       
-      return `${medalhas[i]} **${nome}** ${emoji} — ${compras} compras • ${nivel}`;
+      return `${medalhas[i]} <@${u.discord_id}> ${emoji} **${nivel}**`;
     });
     
     embed.setDescription(
-      `*Os maiores contribuidores da loja*\n*Atualizado em tempo real*\n\n${linhas.join('\n')}`
+      `*Os maiores contribuidores da loja*\n` +
+      `*Atualizado em tempo real*\n\n` +
+      linhas.join('\n') +
+      `\n\n✨ *Continue comprando para subir no ranking!*`
     );
   }
 
