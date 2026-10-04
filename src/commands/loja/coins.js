@@ -41,6 +41,10 @@ module.exports = {
       .setDescription(`${COIN_EMOJI} Transferir coins para outro usuário`)
       .addUserOption(o => o.setName('para').setDescription('Destino').setRequired(true))
       .addIntegerOption(o => o.setName('quantidade').setDescription('Quantidade').setRequired(true).setMinValue(1))
+    )
+    .addSubcommand(sub => sub
+      .setName('ranking')
+      .setDescription('👑 Ver ranking de clientes da loja')
     ),
   cooldown: 5,
 
@@ -156,6 +160,51 @@ module.exports = {
           .setDescription(`<@${interaction.user.id}> transferiu **${qtd.toLocaleString('pt-BR')} coins** para você!\nSeu saldo atual: **${novo.toLocaleString('pt-BR')} coins**`)
           .setTimestamp()] }).catch(() => {});
       }
+      return;
+    }
+
+    // ── RANKING ───────────────────────────────────────────────────────────
+    if (sub === 'ranking') {
+      const { db } = require('../../database/database');
+      
+      // IDs a excluir do ranking (owner)
+      const ownerIds = [];
+      if (process.env.OWNER_DISCORD_ID) ownerIds.push(process.env.OWNER_DISCORD_ID);
+      try {
+        const cargoOwner = interaction.guild?.roles.cache.get(config.roles?.owner);
+        if (cargoOwner) cargoOwner.members.forEach(m => ownerIds.push(m.id));
+      } catch {}
+      const excluirClause = ownerIds.length
+        ? `AND discord_id NOT IN (${ownerIds.map(() => '?').join(',')})` : '';
+
+      const usuarios = db.prepare(`SELECT * FROM usuarios WHERE 1=1 ${excluirClause} ORDER BY total_gasto DESC LIMIT 10`).all(...ownerIds);
+      
+      const medalhas = ['🥇', '🥈', '🥉', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣', '🔟'];
+      
+      const embed = new EmbedBuilder()
+        .setColor(config.colors.gold)
+        .setTitle('👑 TOP 10 — Clientes VIP')
+        .setDescription('*Os maiores contribuidores da loja*')
+        .setTimestamp()
+        .setFooter({ text: 'Máximo Store • Ranking de Clientes' });
+
+      if (!usuarios.length) {
+        embed.setDescription('Nenhum dado disponível ainda.');
+      } else {
+        const linhas = usuarios.map((u, i) =>
+          `${medalhas[i]} **${u.nome || 'Desconhecido'}** — ${u.total_compras || 0} compras • Nível ${u.nivel || 'Bronze'}`
+        );
+        embed.setDescription(linhas.join('\n'));
+      }
+
+      // Posição do usuário
+      const propria = Usuarios.get(interaction.user.id);
+      if (propria) {
+        const pos = db.prepare('SELECT COUNT(*) as c FROM usuarios WHERE total_gasto > ?').get(propria.total_gasto || 0).c + 1;
+        if (pos > 0) embed.addFields({ name: '📍 Sua posição', value: `#${pos}`, inline: true });
+      }
+
+      return interaction.reply({ embeds: [embed] });
     }
   },
 };

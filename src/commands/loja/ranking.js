@@ -42,7 +42,7 @@ module.exports = {
     } else if (tipo === 'gasto') {
       usuarios = db.prepare(`SELECT * FROM usuarios WHERE 1=1 ${excluirClause} ORDER BY total_gasto DESC LIMIT 10`).all(...ownerIds);
       titulo = '💰 Top 10 — Maiores Compradores';
-      campo = u => `R$ ${(u.total_gasto || 0).toFixed(2)} gastos`;
+      campo = u => `${u.total_compras || 0} compras realizadas`;  // SEM mostrar R$
     } else if (tipo === 'compras') {
       usuarios = db.prepare(`SELECT * FROM usuarios WHERE 1=1 ${excluirClause} ORDER BY total_compras DESC LIMIT 10`).all(...ownerIds);
       titulo = '🛒 Top 10 — Mais Compras';
@@ -64,7 +64,7 @@ module.exports = {
         LIMIT 10
       `).all(...ownerIds);
       titulo = '🤝 Top 10 — Afiliados';
-      campo = u => `${u.total_indicados || 0} indicados • R$ ${(u.total_ganho || 0).toFixed(2)} em comissões`;
+      campo = u => `${u.total_indicados || 0} indicados`;  // SEM mostrar comissões R$
     }
 
     const medalhas = ['🥇', '🥈', '🥉', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣', '🔟'];
