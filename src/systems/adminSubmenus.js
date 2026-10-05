@@ -220,26 +220,74 @@ async function estoqueModalVariante(interaction) {
     FROM produtos pr
     JOIN variantes_produto vp ON vp.produto_id=pr.id AND vp.ativo=1
     WHERE pr.ativo=1
-    GROUP BY pr.id ORDER BY pr.nome LIMIT 25
+    GROUP BY pr.id ORDER BY pr.nome
   `).all();
 
   if (!produtos.length) return interaction.reply({ content: '❌ Nenhum produto com variantes encontrado.', ephemeral: true });
 
+  // Mostrar primeira página (0)
+  return mostrarPaginaProdutos(interaction, produtos, 0, false);
+}
+
+function mostrarPaginaProdutos(interaction, produtos, pagina, isUpdate = false) {
+  const porPagina = 24;
+  const totalPaginas = Math.ceil(produtos.length / porPagina);
+  const inicio = pagina * porPagina;
+  const fim = Math.min(inicio + porPagina, produtos.length);
+  const produtosPagina = produtos.slice(inicio, fim);
+
   const { StringSelectMenuOptionBuilder } = require('discord.js');
-  const opcoes = produtos.map(p =>
+  const opcoes = produtosPagina.map(p =>
     new StringSelectMenuOptionBuilder()
       .setValue(p.id)
       .setLabel(p.nome.slice(0, 100))
       .setDescription(`${p.num_vars} variante(s)`),
   );
 
-  const row = new ActionRowBuilder().addComponents(
-    new StringSelectMenuBuilder()
-      .setCustomId('ae_select_produto')
-      .setPlaceholder('1️⃣ Selecione o produto...')
-      .addOptions(opcoes),
-  );
-  return interaction.reply({ content: '📦 Selecione o produto:', components: [row], ephemeral: true });
+  const selectMenu = new StringSelectMenuBuilder()
+    .setCustomId('ae_select_produto')
+    .setPlaceholder(`Selecione o produto (${inicio + 1}-${fim} de ${produtos.length})`)
+    .addOptions(opcoes);
+
+  const rows = [new ActionRowBuilder().addComponents(selectMenu)];
+
+  // Adicionar botões de navegação se tiver mais de 1 página
+  if (totalPaginas > 1) {
+    const btnAnterior = new ButtonBuilder()
+      .setCustomId(`ae_pagprod_${pagina - 1}`)
+      .setLabel('◀ Anterior')
+      .setStyle(ButtonStyle.Primary)
+      .setDisabled(pagina === 0);
+
+    const btnInfo = new ButtonBuilder()
+      .setCustomId('ae_pagprod_info')
+      .setLabel(`Página ${pagina + 1}/${totalPaginas}`)
+      .setStyle(ButtonStyle.Secondary)
+      .setDisabled(true);
+
+    const btnProximo = new ButtonBuilder()
+      .setCustomId(`ae_pagprod_${pagina + 1}`)
+      .setLabel('Próximo ▶')
+      .setStyle(ButtonStyle.Primary)
+      .setDisabled(pagina >= totalPaginas - 1);
+
+    rows.push(new ActionRowBuilder().addComponents(btnAnterior, btnInfo, btnProximo));
+  }
+
+  const payload = { 
+    content: `📦 Selecione o produto (total: ${produtos.length})`, 
+    components: rows,
+    ephemeral: true 
+  };
+
+  // Salvar produtos na sessão para paginação
+  set(interaction.user.id, 'estoque_produtos', { produtos, pagina });
+
+  if (isUpdate) {
+    return interaction.update(payload).catch(() => interaction.editReply(payload));
+  } else {
+    return interaction.reply(payload);
+  }
 }
 
 async function estoqueSelectProduto(interaction) {
@@ -354,6 +402,28 @@ async function estoquePaginar(interaction) {
   `).all(produtoId);
   
   return mostrarPaginaVariantes(interaction, produtoId, produto.nome, variantes, novaPagina, true);
+}
+
+async function estoquePaginarProdutos(interaction) {
+  // Formato: ae_pagprod_{numeroPagina}
+  const parts = interaction.customId.split('_');
+  const novaPagina = parseInt(parts[2]);
+  
+  const sessao = get(interaction.user.id, 'estoque_produtos');
+  if (!sessao || !sessao.produtos) {
+    // Recarregar produtos
+    const produtos = db.prepare(`
+      SELECT pr.id, pr.nome, COUNT(vp.id) as num_vars
+      FROM produtos pr
+      JOIN variantes_produto vp ON vp.produto_id=pr.id AND vp.ativo=1
+      WHERE pr.ativo=1
+      GROUP BY pr.id ORDER BY pr.nome
+    `).all();
+    
+    return mostrarPaginaProdutos(interaction, produtos, novaPagina, true);
+  }
+  
+  return mostrarPaginaProdutos(interaction, sessao.produtos, novaPagina, true);
 }
 
 async function estoqueModalSlot(interaction, slot) {
@@ -611,7 +681,7 @@ module.exports = {
   abrirPlano, planoModalProduto, planoSelectProduto,
   planoModalDados, planoProcessarDados, planoSalvar, planoCancelar,
   // Estoque
-  abrirEstoque, estoqueModalVariante, estoqueSelectProduto, estoqueSelectVariante, estoquePaginar,
+  abrirEstoque, estoqueModalVariante, estoqueSelectProduto, estoqueSelectVariante, estoquePaginar, estoquePaginarProdutos,
   estoqueModalSlot, estoqueProcessarSlot, estoqueSalvar, estoqueCancelar,
   // Cupom
   abrirCupom, cupomModal, cupomProcessar, cupomSalvar, cupomCancelar,
