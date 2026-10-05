@@ -74,39 +74,50 @@ class HotmailTempService {
       for (let tentativa = 1; tentativa <= 20; tentativa++) {
         console.log(`[HotmailTemp] Tentativa ${tentativa}/20...`);
         
-        const response = await axios.get(`${API_BASE}/account`, {
-          headers: {
-            'Authorization': `Bearer ${bearer}`,
-            'Content-Type': 'application/json'
-          }
-        });
+        try {
+          const response = await axios.get(`${API_BASE}/account`, {
+            headers: {
+              'Authorization': `Bearer ${bearer}`,
+              'Content-Type': 'application/json'
+            }
+          });
 
-        if (response.data?.data) {
-          const { address, username, domain } = response.data.data;
-          
-          console.log(`[HotmailTemp] Email gerado: ${address} (domínio: ${domain})`);
-          
-          // Verificar se é Hotmail, Outlook OU Gmail
-          const domainLower = domain.toLowerCase();
-          const isValidDomain = domainLower.includes('hotmail') || 
-                               domainLower.includes('outlook') || 
-                               domainLower.includes('gmail');
-          
-          if (isValidDomain) {
-            console.log('[HotmailTemp] ✅ Email válido criado com sucesso!');
-            return {
-              email: address,
-              username,
-              domain,
-              criado_em: Date.now()
-            };
+          console.log(`[HotmailTemp] Response status:`, response.status);
+          console.log(`[HotmailTemp] Response data:`, JSON.stringify(response.data).slice(0, 300));
+
+          if (response.data?.data) {
+            const { address, username, domain } = response.data.data;
+            
+            console.log(`[HotmailTemp] Email gerado: ${address} (domínio: ${domain})`);
+            
+            // Verificar se é Hotmail, Outlook OU Gmail
+            const domainLower = domain.toLowerCase();
+            const isValidDomain = domainLower.includes('hotmail') || 
+                                 domainLower.includes('outlook') || 
+                                 domainLower.includes('gmail');
+            
+            if (isValidDomain) {
+              console.log('[HotmailTemp] ✅ Email válido criado com sucesso!');
+              return {
+                email: address,
+                username,
+                domain,
+                criado_em: Date.now()
+              };
+            } else {
+              console.log(`[HotmailTemp] ❌ Domínio ${domain} não é válido, deletando...`);
+              // Deletar e tentar novamente
+              await this.deletarEmail(username, domain).catch(err => console.log('[HotmailTemp] Erro ao deletar:', err.message));
+              // Aguardar 500ms antes da próxima tentativa
+              await new Promise(resolve => setTimeout(resolve, 500));
+            }
           } else {
-            console.log(`[HotmailTemp] ❌ Domínio ${domain} não é Hotmail, Outlook ou Gmail, deletando...`);
-            // Deletar e tentar novamente
-            await this.deletarEmail(username, domain).catch(() => {});
-            // Aguardar 500ms antes da próxima tentativa
-            await new Promise(resolve => setTimeout(resolve, 500));
+            console.error(`[HotmailTemp] API não retornou 'data' na tentativa ${tentativa}`);
           }
+        } catch (error) {
+          console.error(`[HotmailTemp] Erro na requisição ${tentativa}:`, error.response?.data || error.message);
+          // Aguardar um pouco antes de tentar novamente
+          await new Promise(resolve => setTimeout(resolve, 1000));
         }
       }
 
