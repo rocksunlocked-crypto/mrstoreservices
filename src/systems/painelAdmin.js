@@ -1013,40 +1013,27 @@ async function handlePainelAdmin(interaction, client) {
       SELECT p.id, p.nome,
         (SELECT COUNT(*) FROM variantes_produto WHERE produto_id=p.id AND ativo=1) as num_vars,
         (SELECT COUNT(*) FROM estoque_variante ev JOIN variantes_produto vp ON ev.variante_id=vp.id WHERE vp.produto_id=p.id AND ev.usado=0) as estoque
-      FROM produtos p WHERE p.ativo=1 ORDER BY p.nome ASC LIMIT 25
+      FROM produtos p WHERE p.ativo=1 ORDER BY p.nome ASC
     `).all();
 
     if (!produtos.length) return interaction.reply({ content: '❌ Nenhum produto ativo encontrado.', ephemeral: true });
 
-    const { StringSelectMenuBuilder, StringSelectMenuOptionBuilder } = require('discord.js');
+    return mostrarPaginaProdutosEnvio(interaction, produtos, 0, false);
+  }
 
-    const opcoes = produtos.map(p =>
-      new StringSelectMenuOptionBuilder()
-        .setValue(p.id)
-        .setLabel(p.nome.slice(0, 100))
-        .setDescription(`${p.num_vars} variante(s) • ${p.estoque} item(s) em estoque`)
-        .setEmoji('📦'),
-    );
+  // Paginação de produtos para envio
+  if (id.startsWith('pa_pag_prodenv_') && id !== 'pa_pag_prodenv_info') {
+    if (!isAdmin(interaction.member)) return interaction.reply({ content: '❌ Apenas admins.', ephemeral: true });
+    const page = parseInt(id.split('_').pop());
+    
+    const produtos = db.prepare(`
+      SELECT p.id, p.nome,
+        (SELECT COUNT(*) FROM variantes_produto WHERE produto_id=p.id AND ativo=1) as num_vars,
+        (SELECT COUNT(*) FROM estoque_variante ev JOIN variantes_produto vp ON ev.variante_id=vp.id WHERE vp.produto_id=p.id AND ev.usado=0) as estoque
+      FROM produtos p WHERE p.ativo=1 ORDER BY p.nome ASC
+    `).all();
 
-    const selectRow = new ActionRowBuilder().addComponents(
-      new StringSelectMenuBuilder()
-        .setCustomId('pa_select_produto_envio')
-        .setPlaceholder('Selecione o produto...')
-        .addOptions(opcoes),
-    );
-
-    return interaction.reply({
-      embeds: [new EmbedBuilder()
-        .setColor(0x5865F2)
-        .setTitle('📤 Enviar Produto')
-        .setDescription([
-          '> Selecione o produto que deseja enviar.',
-          '> Em seguida você escolherá a variante e o destinatário.',
-        ].join('\n'))
-        .setFooter({ text: 'Máximo Store • Envio Manual' })],
-      components: [selectRow],
-      ephemeral: true,
-    });
+    return mostrarPaginaProdutosEnvio(interaction, produtos, page, true);
   }
 
   // ── Select produto → mostrar variantes ────────────────────────────────────
@@ -1058,36 +1045,30 @@ async function handlePainelAdmin(interaction, client) {
 
     const variantes = db.prepare(`
       SELECT vp.*, (SELECT COUNT(*) FROM estoque_variante ev WHERE ev.variante_id=vp.id AND ev.usado=0) as estoque
-      FROM variantes_produto vp WHERE vp.produto_id=? AND vp.ativo=1 ORDER BY vp.ordem ASC LIMIT 25
+      FROM variantes_produto vp WHERE vp.produto_id=? AND vp.ativo=1 ORDER BY vp.ordem ASC
     `).all(produtoId);
 
     if (!variantes.length) return interaction.reply({ content: '❌ Nenhuma variante ativa neste produto.', ephemeral: true });
 
-    const { StringSelectMenuBuilder, StringSelectMenuOptionBuilder } = require('discord.js');
+    return mostrarPaginaVariantesEnvio(interaction, produtoId, produto.nome, variantes, 0, true);
+  }
 
-    const opcoes = variantes.map(v =>
-      new StringSelectMenuOptionBuilder()
-        .setValue(v.id)
-        .setLabel(v.nome.slice(0, 100))
-        .setDescription(`R$ ${Number(v.preco).toFixed(2)} • ${v.estoque} item(s) disponível`)
-        .setEmoji(v.estoque > 0 ? '✅' : '⚠️'),
-    );
+  // Paginação de variantes para envio
+  if (id.startsWith('pa_pag_varenv_') && id !== 'pa_pag_varenv_info') {
+    if (!isAdmin(interaction.member)) return interaction.reply({ content: '❌ Apenas admins.', ephemeral: true });
+    const parts = id.split('_');
+    const page = parseInt(parts.pop());
+    const produtoId = parts[3]; // pa_pag_varenv_{produtoId}_{page}
+    
+    const produto = db.prepare('SELECT * FROM produtos WHERE id=?').get(produtoId);
+    if (!produto) return interaction.reply({ content: '❌ Produto não encontrado.', ephemeral: true });
+    
+    const variantes = db.prepare(`
+      SELECT vp.*, (SELECT COUNT(*) FROM estoque_variante ev WHERE ev.variante_id=vp.id AND ev.usado=0) as estoque
+      FROM variantes_produto vp WHERE vp.produto_id=? AND vp.ativo=1 ORDER BY vp.ordem ASC
+    `).all(produtoId);
 
-    const selectRow = new ActionRowBuilder().addComponents(
-      new StringSelectMenuBuilder()
-        .setCustomId(`pa_select_variante_envio_${produtoId}`)
-        .setPlaceholder('Selecione a variante...')
-        .addOptions(opcoes),
-    );
-
-    return interaction.update({
-      embeds: [new EmbedBuilder()
-        .setColor(0x5865F2)
-        .setTitle(`📤 Enviar — ${produto.nome}`)
-        .setDescription('> Selecione a variante que deseja enviar.')
-        .setFooter({ text: 'Máximo Store • Envio Manual' })],
-      components: [selectRow],
-    });
+    return mostrarPaginaVariantesEnvio(interaction, produtoId, produto.nome, variantes, page, true);
   }
 
   // ── Select variante → modal de destinatário ───────────────────────────────
@@ -3342,3 +3323,87 @@ module.exports = {
   CANAL_PAINEL,
   CANAL_PAINEL_PUBLICO_2FA,
 };
+
+
+// ─── Helpers de Paginação ─────────────────────────────────────────────────────
+function mostrarPaginaProdutosEnvio(interaction, produtos, page, isUpdate = false) {
+  const { StringSelectMenuOptionBuilder } = require('discord.js');
+  const { createPaginatedSelect } = require('../utils/paginationHelper');
+
+  const opcoes = produtos.map(p =>
+    new StringSelectMenuOptionBuilder()
+      .setValue(p.id)
+      .setLabel(p.nome.slice(0, 100))
+      .setDescription(`${p.num_vars} variante(s) • ${p.estoque} item(s) em estoque`)
+      .setEmoji('📦'),
+  );
+
+  const { rows } = createPaginatedSelect({
+    items: opcoes,
+    customId: 'pa_select_produto_envio',
+    placeholder: 'Selecione o produto',
+    page,
+    buttonPrefix: 'pa_pag_prodenv',
+  });
+
+  const payload = {
+    embeds: [new EmbedBuilder()
+      .setColor(0x5865F2)
+      .setTitle('📤 Enviar Produto')
+      .setDescription([
+        '> Selecione o produto que deseja enviar.',
+        '> Em seguida você escolherá a variante e o destinatário.',
+        `> `,
+        `> **Total:** ${produtos.length} produto(s)`,
+      ].join('\n'))
+      .setFooter({ text: 'Máximo Store • Envio Manual' })],
+    components: rows,
+    ephemeral: true,
+  };
+
+  if (isUpdate) {
+    return interaction.update(payload).catch(() => interaction.editReply(payload));
+  } else {
+    return interaction.reply(payload);
+  }
+}
+
+function mostrarPaginaVariantesEnvio(interaction, produtoId, produtoNome, variantes, page, isUpdate = false) {
+  const { StringSelectMenuOptionBuilder } = require('discord.js');
+  const { createPaginatedSelect } = require('../utils/paginationHelper');
+
+  const opcoes = variantes.map(v =>
+    new StringSelectMenuOptionBuilder()
+      .setValue(v.id)
+      .setLabel(v.nome.slice(0, 100))
+      .setDescription(`R$ ${Number(v.preco).toFixed(2)} • ${v.estoque} item(s) disponível`)
+      .setEmoji(v.estoque > 0 ? '✅' : '⚠️'),
+  );
+
+  const { rows } = createPaginatedSelect({
+    items: opcoes,
+    customId: `pa_select_variante_envio_${produtoId}`,
+    placeholder: 'Selecione a variante',
+    page,
+    buttonPrefix: `pa_pag_varenv_${produtoId}`,
+  });
+
+  const payload = {
+    embeds: [new EmbedBuilder()
+      .setColor(0x5865F2)
+      .setTitle(`📤 Enviar — ${produtoNome}`)
+      .setDescription([
+        '> Selecione a variante que deseja enviar.',
+        `> `,
+        `> **Total:** ${variantes.length} variante(s)`,
+      ].join('\n'))
+      .setFooter({ text: 'Máximo Store • Envio Manual' })],
+    components: rows,
+  };
+
+  if (isUpdate) {
+    return interaction.update(payload).catch(() => interaction.editReply(payload));
+  } else {
+    return interaction.update(payload);
+  }
+}
