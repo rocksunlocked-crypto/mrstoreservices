@@ -68,7 +68,7 @@ class HotmailTempService {
     try {
       const bearer = await this.getBearerToken();
       
-      console.log('[HotmailTemp] Iniciando criação de email Hotmail/Outlook...');
+      console.log('[HotmailTemp] Iniciando criação de email (Hotmail, Outlook ou Gmail)...');
       
       // Tentar até 20 vezes para conseguir um email Hotmail/Outlook
       for (let tentativa = 1; tentativa <= 20; tentativa++) {
@@ -86,12 +86,14 @@ class HotmailTempService {
           
           console.log(`[HotmailTemp] Email gerado: ${address} (domínio: ${domain})`);
           
-          // Verificar se é Hotmail OU Outlook
+          // Verificar se é Hotmail, Outlook OU Gmail
           const domainLower = domain.toLowerCase();
-          const isHotmailOrOutlook = domainLower.includes('hotmail') || domainLower.includes('outlook');
+          const isValidDomain = domainLower.includes('hotmail') || 
+                               domainLower.includes('outlook') || 
+                               domainLower.includes('gmail');
           
-          if (isHotmailOrOutlook) {
-            console.log('[HotmailTemp] ✅ Email Hotmail ou Outlook criado com sucesso!');
+          if (isValidDomain) {
+            console.log('[HotmailTemp] ✅ Email válido criado com sucesso!');
             return {
               email: address,
               username,
@@ -99,7 +101,7 @@ class HotmailTempService {
               criado_em: Date.now()
             };
           } else {
-            console.log(`[HotmailTemp] ❌ Domínio ${domain} não é Hotmail nem Outlook, deletando...`);
+            console.log(`[HotmailTemp] ❌ Domínio ${domain} não é Hotmail, Outlook ou Gmail, deletando...`);
             // Deletar e tentar novamente
             await this.deletarEmail(username, domain).catch(() => {});
             // Aguardar 500ms antes da próxima tentativa
@@ -108,7 +110,7 @@ class HotmailTempService {
         }
       }
 
-      throw new Error('Não foi possível gerar um email Hotmail ou Outlook após 20 tentativas. A API pode não ter domínios Hotmail/Outlook disponíveis no momento.');
+      throw new Error('Não foi possível gerar um email Hotmail, Outlook ou Gmail após 20 tentativas. A API pode não ter esses domínios disponíveis no momento.');
     } catch (error) {
       console.error('[HotmailTemp] Erro ao criar email:', error.message);
       throw error;
@@ -188,7 +190,7 @@ async function enviarPainelHotmail(guild) {
       .setColor(0x0078D4) // Azul Outlook
       .setTitle('📧 Gerador de Email Temporário')
       .setDescription([
-        '> Crie um email temporário **Hotmail ou Outlook** instantaneamente!',
+        '> Crie um email temporário **Hotmail, Outlook ou Gmail** instantaneamente!',
         '> ',
         '> **Como funciona:**',
         '> • Clique no botão abaixo',
