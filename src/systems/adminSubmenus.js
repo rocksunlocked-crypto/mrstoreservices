@@ -256,8 +256,51 @@ async function estoqueSelectProduto(interaction) {
 
   if (!variantes.length) return interaction.reply({ content: '❌ Nenhuma variante encontrada para este produto.', ephemeral: true });
 
+  // Se tiver mais de 25, criar sistema de busca
+  if (variantes.length > 25) {
+    const { StringSelectMenuOptionBuilder } = require('discord.js');
+    
+    // Mostrar as primeiras 24 + opção "Buscar por nome"
+    const opcoes = variantes.slice(0, 24).map(v =>
+      new StringSelectMenuOptionBuilder()
+        .setValue(v.id)
+        .setLabel(`${v.nome}`.slice(0, 100))
+        .setDescription(`R$ ${Number(v.preco).toFixed(2)} • ${v.estoque} em estoque • ID: ${v.id.slice(0,8)}`),
+    );
+    
+    // Adicionar opção de buscar
+    opcoes.push(
+      new StringSelectMenuOptionBuilder()
+        .setValue(`BUSCAR_${produtoId}`)
+        .setLabel('🔍 Buscar variante por nome/ID')
+        .setDescription(`${variantes.length} variantes no total - use busca para encontrar`)
+        .setEmoji('🔍')
+    );
+
+    const row = new ActionRowBuilder().addComponents(
+      new StringSelectMenuBuilder()
+        .setCustomId('ae_select_variante')
+        .setPlaceholder(`2️⃣ Selecione a variante (${variantes.length} no total)...`)
+        .addOptions(opcoes),
+    );
+    
+    const embed = new EmbedBuilder()
+      .setColor(0xFF9500)
+      .setTitle(`⚠️ ${produto.nome} tem ${variantes.length} variantes`)
+      .setDescription([
+        `> Mostrando apenas as **primeiras 24** variantes.`,
+        `> `,
+        `> **Para encontrar sua variante:**`,
+        `> • Selecione uma das listadas abaixo`,
+        `> • **OU** selecione **🔍 Buscar** e digite o nome ou ID`,
+      ].join('\n'));
+    
+    return interaction.update({ content: '', embeds: [embed], components: [row] });
+  }
+
+  // Se tiver 25 ou menos, mostrar normalmente
   const { StringSelectMenuOptionBuilder } = require('discord.js');
-  const opcoes = variantes.slice(0, 25).map(v =>
+  const opcoes = variantes.map(v =>
     new StringSelectMenuOptionBuilder()
       .setValue(v.id)
       .setLabel(`${v.nome}`.slice(0, 100))
@@ -270,11 +313,36 @@ async function estoqueSelectProduto(interaction) {
       .setPlaceholder('2️⃣ Selecione a variante...')
       .addOptions(opcoes),
   );
-  return interaction.update({ content: `📦 **${produto.nome}** — Selecione a variante:`, components: [row] });
+  return interaction.update({ content: `📦 **${produto.nome}** — Selecione a variante:`, components: [row], embeds: [] });
 }
 
 async function estoqueSelectVariante(interaction) {
   const varianteId = interaction.values[0];
+  
+  // Se for comando de busca
+  if (varianteId.startsWith('BUSCAR_')) {
+    const produtoId = varianteId.replace('BUSCAR_', '');
+    const produto = db.prepare('SELECT nome FROM produtos WHERE id=?').get(produtoId);
+    
+    const modal = new ModalBuilder()
+      .setCustomId(`aem_buscar_variante_${produtoId}`)
+      .setTitle(`🔍 Buscar Variante`);
+    
+    modal.addComponents(
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId('busca')
+          .setLabel('Nome ou ID da variante')
+          .setStyle(TextInputStyle.Short)
+          .setRequired(true)
+          .setPlaceholder('Digite o nome ou primeiros caracteres do ID')
+      )
+    );
+    
+    return interaction.showModal(modal);
+  }
+  
+  // Seleção normal
   const variante   = db.prepare('SELECT * FROM variantes_produto WHERE id=?').get(varianteId);
   const produto    = variante ? db.prepare('SELECT nome FROM produtos WHERE id=?').get(variante.produto_id) : null;
   set(interaction.user.id, 'estoque', { varianteId, varianteNome: `${produto?.nome || '?'} — ${variante?.nome || '?'}` });
@@ -303,6 +371,56 @@ async function estoqueProcessarSlot(interaction, slot) {
   const conteudo = interaction.fields.getTextInputValue('conteudo').trim();
   set(interaction.user.id, 'estoque', { [`slot${slot}`]: conteudo || null });
   return rerenderEstoque(interaction);
+}
+
+async function estoqueBuscarVariante(interaction) {
+  await interaction.deferReply({ ephemeral: true });
+  
+  const produtoId = interaction.customId.replace('aem_buscar_variante_', '');
+  const busca = interaction.fields.getTextInputValue('busca').trim().toLowerCase();
+  
+  if (!busca) {
+    return interaction.editReply({ content: '❌ Digite algo para buscar!' });
+  }
+  
+  // Buscar variantes que contenham o texto
+  const variantes = db.prepare(`
+    SELECT vp.*,
+      (SELECT COUNT(*) FROM estoque_variante WHERE variante_id=vp.id AND usado=0) as estoque
+    FROM variantes_produto vp 
+    WHERE vp.produto_id=? AND vp.ativo=1 
+    AND (LOWER(vp.nome) LIKE ? OR vp.id LIKE ?)
+    ORDER BY vp.ordem
+    LIMIT 25
+  `).all(produtoId, `%${busca}%`, `${busca}%`);
+  
+  if (!variantes.length) {
+    return interaction.editReply({ 
+      content: `❌ Nenhuma variante encontrada com: **${busca}**\n\n💡 Tente buscar por:\n• Parte do nome\n• Primeiros caracteres do ID` 
+    });
+  }
+  
+  const { StringSelectMenuOptionBuilder } = require('discord.js');
+  const opcoes = variantes.map(v =>
+    new StringSelectMenuOptionBuilder()
+      .setValue(v.id)
+      .setLabel(`${v.nome}`.slice(0, 100))
+      .setDescription(`R$ ${Number(v.preco).toFixed(2)} • ${v.estoque} em estoque • ID: ${v.id.slice(0,8)}`),
+  );
+  
+  const row = new ActionRowBuilder().addComponents(
+    new StringSelectMenuBuilder()
+      .setCustomId('ae_select_variante')
+      .setPlaceholder(`Encontrado ${variantes.length} resultado(s) para "${busca}"`)
+      .addOptions(opcoes),
+  );
+  
+  const embed = new EmbedBuilder()
+    .setColor(0x57F287)
+    .setTitle(`🔍 Resultados da Busca: "${busca}"`)
+    .setDescription(`> Encontrado **${variantes.length}** variante(s)`);
+  
+  return interaction.editReply({ embeds: [embed], components: [row] });
 }
 
 async function estoqueSalvar(interaction) {
@@ -538,7 +656,7 @@ module.exports = {
   planoModalDados, planoProcessarDados, planoSalvar, planoCancelar,
   // Estoque
   abrirEstoque, estoqueModalVariante, estoqueSelectProduto, estoqueSelectVariante,
-  estoqueModalSlot, estoqueProcessarSlot, estoqueSalvar, estoqueCancelar,
+  estoqueModalSlot, estoqueProcessarSlot, estoqueBuscarVariante, estoqueSalvar, estoqueCancelar,
   // Cupom
   abrirCupom, cupomModal, cupomProcessar, cupomSalvar, cupomCancelar,
 };
