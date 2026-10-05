@@ -1422,71 +1422,90 @@ async function handlePainelAdmin(interaction, client) {
   }
 
   if (id === 'pa_listar_carrinhos' || id.startsWith('pa_listar_produtos_pg_')) {
-    await interaction.deferReply({ ephemeral: true });
-    
-    // Paginação
-    const pagina = id.startsWith('pa_listar_produtos_pg_') 
-      ? parseInt(id.split('_').pop()) 
-      : 1;
-    const porPagina = 10;
-    const offset = (pagina - 1) * porPagina;
-    
-    const total = db.prepare('SELECT COUNT(*) as c FROM produtos').get().c;
-    const totalPaginas = Math.ceil(total / porPagina);
-    
-    const lista = db.prepare(`
-      SELECT * FROM produtos 
-      ORDER BY ativo DESC, vendas DESC 
-      LIMIT ? OFFSET ?
-    `).all(porPagina, offset);
-    
-    if (!lista.length) {
-      return interaction.editReply({ content: '📦 Nenhum produto cadastrado.' });
-    }
-    
-    const embed = new EmbedBuilder()
-      .setColor(config.colors.primary)
-      .setTitle(`📦 Produtos (${total} total)`)
-      .setDescription(`Página ${pagina} de ${totalPaginas}`)
-      .setTimestamp();
-    
-    for (const p of lista) {
-      const digEst = db.prepare('SELECT COUNT(*) as c FROM estoque_digital WHERE produto_id=? AND usado=0').get(p.id);
-      const varEst = db.prepare("SELECT COUNT(*) as c FROM estoque_variante ev JOIN variantes_produto vp ON ev.variante_id=vp.id WHERE vp.produto_id=? AND ev.usado=0").get(p.id);
-      const totalEst  = digEst.c + varEst.c;
+    try {
+      await interaction.deferReply({ ephemeral: true });
       
-      embed.addFields({
-        name:  `${p.ativo ? '✅' : '❌'} ${p.nome}`,
-        value: `💵 R$ ${(p.preco_promo||p.preco).toFixed(2)} • 📦 Est: ${totalEst > 0 ? totalEst : p.estoque === -1 ? '∞' : p.estoque} • 🛒 ${p.vendas} vendas\n\`ID: ${p.id.slice(0,8)}\``,
-        inline: false,
+      // Paginação
+      const pagina = id.startsWith('pa_listar_produtos_pg_') 
+        ? parseInt(id.split('_').pop()) 
+        : 1;
+      const porPagina = 5; // Reduzido para 5
+      const offset = (pagina - 1) * porPagina;
+      
+      const total = db.prepare('SELECT COUNT(*) as c FROM produtos').get().c;
+      const totalPaginas = Math.ceil(total / porPagina);
+      
+      const lista = db.prepare(`
+        SELECT * FROM produtos 
+        ORDER BY ativo DESC, vendas DESC 
+        LIMIT ? OFFSET ?
+      `).all(porPagina, offset);
+      
+      if (!lista.length) {
+        return interaction.editReply({ content: '📦 Nenhum produto cadastrado.' });
+      }
+      
+      const embed = new EmbedBuilder()
+        .setColor(config.colors.primary)
+        .setTitle(`📦 Produtos`)
+        .setDescription(`Mostrando ${lista.length} de ${total} produtos • Página ${pagina}/${totalPaginas}`)
+        .setTimestamp()
+        .setFooter({ text: 'Máximo Store • Painel Admin' });
+      
+      for (const p of lista) {
+        try {
+          const digEst = db.prepare('SELECT COUNT(*) as c FROM estoque_digital WHERE produto_id=? AND usado=0').get(p.id);
+          const varEst = db.prepare("SELECT COUNT(*) as c FROM estoque_variante ev JOIN variantes_produto vp ON ev.variante_id=vp.id WHERE vp.produto_id=? AND ev.usado=0").get(p.id);
+          const totalEst = (digEst?.c || 0) + (varEst?.c || 0);
+          
+          embed.addFields({
+            name: `${p.ativo ? '🟢' : '🔴'} ${p.nome}`,
+            value: [
+              `💵 **R$ ${(p.preco_promo || p.preco).toFixed(2)}**`,
+              `📦 Estoque: **${totalEst > 0 ? totalEst : p.estoque === -1 ? '∞' : p.estoque}**`,
+              `🛒 Vendas: **${p.vendas}**`,
+              `🆔 \`${p.id.slice(0, 8)}\``,
+            ].join(' • '),
+            inline: false,
+          });
+        } catch (e) {
+          console.error('[PainelAdmin] Erro ao processar produto:', p.id, e.message);
+        }
+      }
+      
+      // Botões de navegação
+      const rows = [];
+      if (totalPaginas > 1) {
+        const navRow = new ActionRowBuilder();
+        
+        if (pagina > 1) {
+          navRow.addComponents(
+            btn(`pa_listar_produtos_pg_${pagina - 1}`, '◀️ Anterior', ButtonStyle.Primary)
+          );
+        }
+        
+        navRow.addComponents(
+          btn(`pa_listar_produtos_pg_${pagina}`, `📄 ${pagina}/${totalPaginas}`, ButtonStyle.Secondary)
+        );
+        
+        if (pagina < totalPaginas) {
+          navRow.addComponents(
+            btn(`pa_listar_produtos_pg_${pagina + 1}`, 'Próximo ▶️', ButtonStyle.Primary)
+          );
+        }
+        
+        rows.push(navRow);
+      }
+      
+      return interaction.editReply({ embeds: [embed], components: rows });
+    } catch (error) {
+      console.error('[PainelAdmin] Erro ao listar produtos:', error);
+      return interaction.editReply({ 
+        content: `❌ Erro ao carregar produtos: ${error.message}\n\nTente novamente ou contate o suporte.`,
+        embeds: [],
+        components: []
       });
     }
-    
-    // Botões de navegação
-    const rows = [];
-    if (totalPaginas > 1) {
-      const navRow = new ActionRowBuilder();
-      
-      if (pagina > 1) {
-        navRow.addComponents(
-          btn(`pa_listar_produtos_pg_${pagina - 1}`, '◀️ Anterior', ButtonStyle.Primary)
-        );
-      }
-      
-      navRow.addComponents(
-        btn('pa_listar_produtos_pg_1', `📄 ${pagina}/${totalPaginas}`, ButtonStyle.Secondary)
-      );
-      
-      if (pagina < totalPaginas) {
-        navRow.addComponents(
-          btn(`pa_listar_produtos_pg_${pagina + 1}`, 'Próximo ▶️', ButtonStyle.Primary)
-        );
-      }
-      
-      rows.push(navRow);
-    }
-    
-    return interaction.editReply({ embeds: [embed], components: rows });
   }
 
   if (id === 'pa_criar_cupom') {
