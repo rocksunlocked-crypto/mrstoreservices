@@ -21,6 +21,14 @@ class HotmailTempService {
   constructor() {
     this.bearerToken = null;
     this.apiToken = process.env.TEMP_MAIL_TOKEN || null;
+    
+    // Debug: verificar se o token foi carregado
+    if (this.apiToken) {
+      console.log('[HotmailTemp] Token carregado com sucesso (primeiros 8 chars):', this.apiToken.slice(0, 8));
+    } else {
+      console.error('[HotmailTemp] ⚠️ TEMP_MAIL_TOKEN não encontrado no process.env');
+      console.error('[HotmailTemp] Variáveis disponíveis:', Object.keys(process.env).filter(k => k.includes('TEMP')));
+    }
   }
 
   async getBearerToken() {
