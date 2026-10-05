@@ -1389,23 +1389,6 @@ async function handlePainelAdmin(interaction, client) {
     return interaction.showModal(modal);
   }
 
-  if (id === 'pa_listar_carrinhos') {
-    await interaction.deferReply({ ephemeral: true });
-    const paineis = db.prepare("SELECT p.*,pr.nome AS pnome FROM paineis_canal p JOIN produtos pr ON p.produto_id=pr.id WHERE p.ativo=1 ORDER BY p.criado_em DESC").all();
-    if (!paineis.length) return interaction.editReply({ content: '📋 Nenhum carrinho criado ainda.' });
-    const embed = new EmbedBuilder().setColor(config.colors.loja).setTitle('🛒 Carrinhos Ativos').setTimestamp();
-    for (const p of paineis) {
-      const vars = db.prepare('SELECT * FROM variantes_produto WHERE produto_id=? AND ativo=1 ORDER BY ordem').all(p.produto_id);
-      const linhas = vars.map(v => {
-        const dig = db.prepare('SELECT COUNT(*) as c FROM estoque_variante WHERE variante_id=? AND usado=0').get(v.id);
-        const est = dig.c > 0 ? `${dig.c} un.` : (v.estoque === -1 ? '∞' : `${v.estoque}`);
-        return `• **${v.nome}** — R$ ${Number(v.preco).toFixed(2)} (${est}) \`${v.id.slice(0,8)}\``;
-      }).join('\n') || '_Sem planos_';
-      embed.addFields({ name: `📦 ${p.pnome} → <#${p.canal_id}>`, value: `Produto ID: \`${p.produto_id.slice(0,8)}\`\n${linhas}`, inline: false });
-    }
-    return interaction.editReply({ embeds: [embed] });
-  }
-
   // ─── PRODUTOS ──────────────────────────────────────────────────────────────
 
   if (id === 'pa_add_produto') {
