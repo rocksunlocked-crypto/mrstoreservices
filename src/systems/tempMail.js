@@ -28,16 +28,22 @@ class TempMailService {
     try {
       const response = await axios.post(`${API_BASE}/token`, {
         token: this.apiToken
+      }, {
+        headers: {
+          'Content-Type': 'application/json'
+        }
       });
 
-      if (response.data?.token) {
-        this.bearerToken = response.data.token;
+      // A API retorna: { code: 200, status: true, msg: 'success', data: { Bearer: '...' } }
+      if (response.data?.data?.Bearer) {
+        this.bearerToken = response.data.data.Bearer;
+        console.log('[TempMail] Bearer Token obtido com sucesso');
         return this.bearerToken;
       }
 
-      throw new Error('Falha ao obter Bearer Token');
+      throw new Error('Falha ao obter Bearer Token: ' + JSON.stringify(response.data));
     } catch (error) {
-      console.error('[TempMail] Erro ao obter Bearer Token:', error.message);
+      console.error('[TempMail] Erro ao obter Bearer Token:', error.response?.data || error.message);
       throw error;
     }
   }
