@@ -631,63 +631,69 @@ async function entregarProduto(pedido, client) {
       .setFooter({ text: t('delivery_footer', idioma) });
 
     let urlDownload = null; // Guardar URL do download para adicionar botão depois
-    let conteudoFormatado = null; // Conteúdo numerado
 
     if (conteudo && conteudo !== '⚠️ Entrega manual — nossa equipe entrará em contato via ticket.' && conteudo !== '⚠️ ABRIR TICKET PRA RESGATAR') {
       // Formatar produtos numerados: 1 `PRODUTO`, 2 `PRODUTO`, etc.
       const linhas = conteudo.split('\n').filter(l => l.trim());
-      conteudoFormatado = linhas.map((linha, idx) => `${idx + 1} \`${linha.trim()}\``).join('\n');
-
-      // SEMPRE gerar arquivo .txt (independente da quantidade)
+      
+      // SEMPRE gerar arquivo .txt e enviar para o Discord (usar CDN do Discord)
       try {
         const fs     = require('fs');
         const path   = require('path');
-        const crypto = require('crypto');
-        const token  = crypto.randomBytes(16).toString('hex');
         const dir    = path.join(process.cwd(), 'data', 'downloads');
         if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
         
         const header = `=== ${produto.nome} ===\nPedido: ${pedido.id.slice(0,8).toUpperCase()}\nData: ${new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}\nQuantidade: ${qtd}\n${'='.repeat(40)}\n\n`;
         const conteudoTxt = linhas.join('\n'); // Arquivo TXT sem numeração
-        fs.writeFileSync(path.join(dir, `${token}.txt`), header + conteudoTxt, 'utf-8');
+        const tempFile = path.join(dir, `temp-${pedido.id}.txt`);
+        fs.writeFileSync(tempFile, header + conteudoTxt, 'utf-8');
         
-        const baseUrl  = process.env.BOT_URL || 'https://mrstoreservices.up.railway.app';
-        urlDownload = `${baseUrl}/download/${token}`;
+        // Enviar para o canal de logs e pegar o link do Discord CDN
+        const canalLogs = guild.channels.cache.get('1545265490216095834');
+        if (canalLogs) {
+          const attachment = new AttachmentBuilder(tempFile, { name: `pedido-${pedido.id.slice(0,8).toUpperCase()}.txt` });
+          const logEmbed = new EmbedBuilder()
+            .setColor(config.colors.success)
+            .setTitle('📦 Novo Pedido Entregue')
+            .addFields(
+              { name: '👤 Cliente', value: `<@${pedido.usuario_id}>`, inline: true },
+              { name: '🛍️ Produto', value: produto.nome, inline: true },
+              { name: '📊 Quantidade', value: `${qtd}`, inline: true },
+              { name: '💰 Valor', value: `R$ ${pedido.valor_total.toFixed(2)}`, inline: true },
+              { name: '🆔 Pedido', value: `\`${pedido.id.slice(0,8).toUpperCase()}\``, inline: true },
+              { name: '📅 Data', value: new Date().toLocaleString('pt-BR'), inline: true }
+            )
+            .setTimestamp();
+          
+          const msgLog = await canalLogs.send({ embeds: [logEmbed], files: [attachment] }).catch(e => {
+            console.error('[Log Canal Pedidos]', e.message);
+            return null;
+          });
+
+          // Pegar o link do arquivo do Discord CDN
+          if (msgLog && msgLog.attachments.size > 0) {
+            urlDownload = msgLog.attachments.first().url;
+          }
+
+          // Deletar arquivo temporário
+          try { fs.unlinkSync(tempFile); } catch {}
+        }
         
         // Mostrar produtos numerados no embed + botão de download
         const preview = linhas.slice(0, 5).map((l, i) => `${i + 1} \`${l.trim()}\``).join('\n');
         const maisItens = linhas.length > 5 ? `\n... e mais **${linhas.length - 5}** itens` : '';
         
-        embed.addFields({ 
-          name: '📦 Seus Produtos', 
-          value: preview + maisItens + `\n\n📥 [**Clique aqui para baixar o arquivo completo**](${urlDownload})\n> Link válido por **48 horas**`, 
-          inline: false 
-        });
-
-        // Enviar cópia do .txt para o canal de logs
-        try {
-          const canalLogs = guild.channels.cache.get('1545265490216095834');
-          if (canalLogs) {
-            const attachment = new AttachmentBuilder(path.join(dir, `${token}.txt`), { name: `pedido-${pedido.id.slice(0,8).toUpperCase()}.txt` });
-            const logEmbed = new EmbedBuilder()
-              .setColor(config.colors.success)
-              .setTitle('📦 Novo Pedido Entregue')
-              .addFields(
-                { name: '👤 Cliente', value: `<@${pedido.usuario_id}>`, inline: true },
-                { name: '🛍️ Produto', value: produto.nome, inline: true },
-                { name: '📊 Quantidade', value: `${qtd}`, inline: true },
-                { name: '💰 Valor', value: `R$ ${pedido.valor_total.toFixed(2)}`, inline: true },
-                { name: '🆔 Pedido', value: `\`${pedido.id.slice(0,8).toUpperCase()}\``, inline: true },
-                { name: '📅 Data', value: new Date().toLocaleString('pt-BR'), inline: true }
-              )
-              .setTimestamp();
-            
-            await canalLogs.send({ embeds: [logEmbed], files: [attachment] }).catch(e => 
-              console.error('[Log Canal Pedidos]', e.message)
-            );
-          }
-        } catch (e) {
-          console.error('[Log Canal Pedidos]', e.message);
+        if (urlDownload) {
+          embed.addFields({ 
+            name: '📦 Seus Produtos', 
+            value: preview + maisItens + `\n\n📥 [**Clique aqui para baixar o arquivo completo**](${urlDownload})`, 
+            inline: false 
+          });
+        } else {
+          // Fallback se não conseguiu enviar para o Discord
+          const previewLongo = linhas.slice(0, 10).map((l, i) => `${i + 1} \`${l.trim()}\``).join('\n');
+          const maisItensLongo = linhas.length > 10 ? `\n... e mais **${linhas.length - 10}** itens` : '';
+          embed.addFields({ name: '📦 Seus Produtos', value: previewLongo + maisItensLongo, inline: false });
         }
       } catch (e) {
         console.error('[Download TXT]', e.message);

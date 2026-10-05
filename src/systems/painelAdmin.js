@@ -2687,55 +2687,55 @@ async function handlePainelAdminModals(interaction, client) {
 
     if (!itens.length) return interaction.editReply({ content: '❌ Sem estoque disponível para esta variante.' });
 
-    // Formatar produtos numerados: 1 `PRODUTO`, 2 `PRODUTO`, etc.
-    const conteudoFormatado = itens.map((item, idx) => `${idx + 1} \`${item.trim()}\``).join('\n');
-    const preview = itens.slice(0, 5).map((item, idx) => `${idx + 1} \`${item.trim()}\``).join('\n');
-    const maisItens = itens.length > 5 ? `\n... e mais **${itens.length - 5}** itens` : '';
-
-    // Gerar arquivo .txt para download
+    // Gerar arquivo .txt e enviar para o Discord (usar CDN do Discord)
     let urlDownload = null;
     try {
       const fs     = require('fs');
       const path   = require('path');
-      const crypto = require('crypto');
-      const token  = crypto.randomBytes(16).toString('hex');
       const dir    = path.join(process.cwd(), 'data', 'downloads');
       if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
       
       const header = `=== ${produto.nome} — ${variante.nome} ===\nEnviado por: ${interaction.user.username}\nMotivo: ${motivo}\nData: ${new Date().toLocaleString('pt-BR')}\nQuantidade: ${itens.length}\n${'='.repeat(40)}\n\n`;
-      fs.writeFileSync(path.join(dir, `${token}.txt`), header + itens.join('\n'), 'utf-8');
-      
-      const baseUrl  = process.env.BOT_URL || 'https://mrstoreservices.up.railway.app';
-      urlDownload = `${baseUrl}/download/${token}`;
+      const tempFile = path.join(dir, `temp-manual-${Date.now()}.txt`);
+      fs.writeFileSync(tempFile, header + itens.join('\n'), 'utf-8');
 
-      // Enviar cópia para o canal de logs
-      try {
-        const canalLogs = interaction.guild.channels.cache.get('1545265490216095834');
-        if (canalLogs) {
-          const attachment = new AttachmentBuilder(path.join(dir, `${token}.txt`), { name: `envio-manual-${Date.now()}.txt` });
-          const logEmbed = new EmbedBuilder()
-            .setColor(config.colors.success)
-            .setTitle('📤 Envio Manual de Produto')
-            .addFields(
-              { name: '👤 Enviado por', value: `<@${interaction.user.id}>`, inline: true },
-              { name: '👥 Destinatário', value: discordId ? `<@${discordId}>` : 'Canal', inline: true },
-              { name: '🛍️ Produto', value: `${produto.nome} — ${variante.nome}`, inline: false },
-              { name: '📊 Quantidade', value: `${itens.length}`, inline: true },
-              { name: '📝 Motivo', value: motivo, inline: false },
-              { name: '📅 Data', value: new Date().toLocaleString('pt-BR'), inline: true }
-            )
-            .setTimestamp();
-          
-          await canalLogs.send({ embeds: [logEmbed], files: [attachment] }).catch(e => 
-            console.error('[Log Canal Envios]', e.message)
-          );
+      // Enviar para o canal de logs e pegar o link do Discord CDN
+      const canalLogs = interaction.guild.channels.cache.get('1545265490216095834');
+      if (canalLogs) {
+        const attachment = new AttachmentBuilder(tempFile, { name: `envio-manual-${Date.now()}.txt` });
+        const logEmbed = new EmbedBuilder()
+          .setColor(config.colors.success)
+          .setTitle('📤 Envio Manual de Produto')
+          .addFields(
+            { name: '👤 Enviado por', value: `<@${interaction.user.id}>`, inline: true },
+            { name: '👥 Destinatário', value: discordId ? `<@${discordId}>` : 'Canal', inline: true },
+            { name: '🛍️ Produto', value: `${produto.nome} — ${variante.nome}`, inline: false },
+            { name: '📊 Quantidade', value: `${itens.length}`, inline: true },
+            { name: '📝 Motivo', value: motivo, inline: false },
+            { name: '📅 Data', value: new Date().toLocaleString('pt-BR'), inline: true }
+          )
+          .setTimestamp();
+        
+        const msgLog = await canalLogs.send({ embeds: [logEmbed], files: [attachment] }).catch(e => {
+          console.error('[Log Canal Envios]', e.message);
+          return null;
+        });
+
+        // Pegar o link do arquivo do Discord CDN
+        if (msgLog && msgLog.attachments.size > 0) {
+          urlDownload = msgLog.attachments.first().url;
         }
-      } catch (e) {
-        console.error('[Log Canal Envios]', e.message);
+
+        // Deletar arquivo temporário
+        try { fs.unlinkSync(tempFile); } catch {}
       }
     } catch (e) {
       console.error('[Download TXT Envio Manual]', e.message);
     }
+
+    // Formatar produtos numerados para o embed
+    const preview = itens.slice(0, 5).map((item, idx) => `${idx + 1} \`${item.trim()}\``).join('\n');
+    const maisItens = itens.length > 5 ? `\n... e mais **${itens.length - 5}** itens` : '';
 
     const embedProduto = new EmbedBuilder()
       .setColor(config.colors.success)
@@ -2748,7 +2748,7 @@ async function handlePainelAdminModals(interaction, client) {
       ].filter(Boolean).join('\n'))
       .addFields({ 
         name: '🎁 Seus Produtos', 
-        value: preview + maisItens + (urlDownload ? `\n\n📥 [**Clique aqui para baixar o arquivo completo**](${urlDownload})\n> Link válido por **48 horas**` : ''), 
+        value: preview + maisItens + (urlDownload ? `\n\n📥 [**Clique aqui para baixar o arquivo completo**](${urlDownload})` : ''), 
         inline: false 
       })
       .setTimestamp()
