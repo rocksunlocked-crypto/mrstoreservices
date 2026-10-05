@@ -62,98 +62,53 @@ class HotmailTempService {
   }
 
   /**
-   * Buscar domínios disponíveis
-   */
-  async buscarDominios() {
-    try {
-      const bearer = await this.getBearerToken();
-      
-      const response = await axios.get(`${API_BASE}/dominios`, {
-        headers: {
-          'Authorization': `Bearer ${bearer}`,
-          'Content-Type': 'application/json'
-        }
-      });
-
-      if (response.data?.data) {
-        return response.data.data;
-      }
-
-      return [];
-    } catch (error) {
-      console.error('[HotmailTemp] Erro ao buscar domínios:', error.response?.data || error.message);
-      return [];
-    }
-  }
-
-  /**
-   * Criar email temporário com domínio específico
-   */
-  async criarEmailComDominio(domain) {
-    try {
-      const bearer = await this.getBearerToken();
-      
-      const response = await axios.post(`${API_BASE}/account`, {
-        domain
-      }, {
-        headers: {
-          'Authorization': `Bearer ${bearer}`,
-          'Content-Type': 'application/json'
-        }
-      });
-
-      if (response.data?.data) {
-        const { address, username, domain: responseDomain } = response.data.data;
-        console.log('[HotmailTemp] Email criado:', address);
-        return {
-          email: address,
-          username,
-          domain: responseDomain,
-          criado_em: Date.now()
-        };
-      }
-
-      throw new Error('Falha ao criar email');
-    } catch (error) {
-      console.error('[HotmailTemp] Erro ao criar email:', error.response?.data || error.message);
-      throw error;
-    }
-  }
-
-  /**
-   * Criar email temporário (filtra apenas Hotmail/Outlook)
+   * Criar email temporário (tenta até conseguir Hotmail/Outlook)
    */
   async criarEmailHotmail() {
     try {
-      // Buscar domínios disponíveis
-      const dominios = await this.buscarDominios();
+      const bearer = await this.getBearerToken();
       
-      if (!dominios || dominios.length === 0) {
-        throw new Error('Nenhum domínio disponível no momento');
+      console.log('[HotmailTemp] Iniciando criação de email Hotmail/Outlook...');
+      
+      // Tentar até 20 vezes para conseguir um email Hotmail/Outlook
+      for (let tentativa = 1; tentativa <= 20; tentativa++) {
+        console.log(`[HotmailTemp] Tentativa ${tentativa}/20...`);
+        
+        const response = await axios.get(`${API_BASE}/account`, {
+          headers: {
+            'Authorization': `Bearer ${bearer}`,
+            'Content-Type': 'application/json'
+          }
+        });
+
+        if (response.data?.data) {
+          const { address, username, domain } = response.data.data;
+          
+          console.log(`[HotmailTemp] Email gerado: ${address} (domínio: ${domain})`);
+          
+          // Verificar se é Hotmail ou Outlook
+          const isHotmail = domain.toLowerCase().includes('hotmail');
+          const isOutlook = domain.toLowerCase().includes('outlook');
+          
+          if (isHotmail || isOutlook) {
+            console.log('[HotmailTemp] ✅ Email Hotmail/Outlook criado com sucesso!');
+            return {
+              email: address,
+              username,
+              domain,
+              criado_em: Date.now()
+            };
+          } else {
+            console.log(`[HotmailTemp] ❌ Domínio ${domain} não é Hotmail/Outlook, deletando...`);
+            // Deletar e tentar novamente
+            await this.deletarEmail(username, domain).catch(() => {});
+            // Aguardar 500ms antes da próxima tentativa
+            await new Promise(resolve => setTimeout(resolve, 500));
+          }
+        }
       }
 
-      console.log('[HotmailTemp] Domínios disponíveis:', dominios.length);
-
-      // Filtrar apenas Hotmail/Outlook
-      const dominiosHotmail = dominios.filter(d => {
-        const domain = d.domain || d;
-        return domain.includes('hotmail') || domain.includes('outlook');
-      });
-
-      if (dominiosHotmail.length === 0) {
-        throw new Error('Nenhum domínio Hotmail/Outlook disponível no momento. Domínios disponíveis: ' + dominios.map(d => d.domain || d).slice(0, 5).join(', '));
-      }
-
-      console.log('[HotmailTemp] Domínios Hotmail/Outlook encontrados:', dominiosHotmail.length);
-
-      // Escolher um domínio aleatório
-      const dominioEscolhido = dominiosHotmail[Math.floor(Math.random() * dominiosHotmail.length)];
-      const domain = dominioEscolhido.domain || dominioEscolhido;
-
-      console.log('[HotmailTemp] Criando email com domínio:', domain);
-
-      // Criar email com o domínio escolhido
-      return await this.criarEmailComDominio(domain);
+      throw new Error('Não foi possível gerar um email Hotmail/Outlook após 20 tentativas. A API pode não ter domínios Hotmail/Outlook disponíveis no momento.');
     } catch (error) {
       console.error('[HotmailTemp] Erro ao criar email:', error.message);
       throw error;
