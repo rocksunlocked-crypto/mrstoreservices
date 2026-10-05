@@ -86,12 +86,12 @@ class HotmailTempService {
           
           console.log(`[HotmailTemp] Email gerado: ${address} (domínio: ${domain})`);
           
-          // Verificar se é Hotmail ou Outlook
-          const isHotmail = domain.toLowerCase().includes('hotmail');
-          const isOutlook = domain.toLowerCase().includes('outlook');
+          // Verificar se é Hotmail OU Outlook
+          const domainLower = domain.toLowerCase();
+          const isHotmailOrOutlook = domainLower.includes('hotmail') || domainLower.includes('outlook');
           
-          if (isHotmail || isOutlook) {
-            console.log('[HotmailTemp] ✅ Email Hotmail/Outlook criado com sucesso!');
+          if (isHotmailOrOutlook) {
+            console.log('[HotmailTemp] ✅ Email Hotmail ou Outlook criado com sucesso!');
             return {
               email: address,
               username,
@@ -99,7 +99,7 @@ class HotmailTempService {
               criado_em: Date.now()
             };
           } else {
-            console.log(`[HotmailTemp] ❌ Domínio ${domain} não é Hotmail/Outlook, deletando...`);
+            console.log(`[HotmailTemp] ❌ Domínio ${domain} não é Hotmail nem Outlook, deletando...`);
             // Deletar e tentar novamente
             await this.deletarEmail(username, domain).catch(() => {});
             // Aguardar 500ms antes da próxima tentativa
@@ -108,7 +108,7 @@ class HotmailTempService {
         }
       }
 
-      throw new Error('Não foi possível gerar um email Hotmail/Outlook após 20 tentativas. A API pode não ter domínios Hotmail/Outlook disponíveis no momento.');
+      throw new Error('Não foi possível gerar um email Hotmail ou Outlook após 20 tentativas. A API pode não ter domínios Hotmail/Outlook disponíveis no momento.');
     } catch (error) {
       console.error('[HotmailTemp] Erro ao criar email:', error.message);
       throw error;
@@ -186,9 +186,9 @@ async function enviarPainelHotmail(guild) {
 
     const embed = new EmbedBuilder()
       .setColor(0x0078D4) // Azul Outlook
-      .setTitle('📧 Gerador de Email Hotmail Temporário')
+      .setTitle('📧 Gerador de Email Temporário')
       .setDescription([
-        '> Crie um email temporário **Hotmail/Outlook** instantaneamente!',
+        '> Crie um email temporário **Hotmail ou Outlook** instantaneamente!',
         '> ',
         '> **Como funciona:**',
         '> • Clique no botão abaixo',
@@ -201,13 +201,13 @@ async function enviarPainelHotmail(guild) {
         '> 🗑️ **Auto-deletar** — canal é removido após expiração'
       ].join('\n'))
       .setThumbnail('https://i.imgur.com/outlook-icon.png')
-      .setFooter({ text: 'Máximo Store • Email Temporário Hotmail' })
+      .setFooter({ text: 'Máximo Store • Email Temporário' })
       .setTimestamp();
 
     const row = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
         .setCustomId('hotmail_gerar')
-        .setLabel('📧 Gerar Email Hotmail')
+        .setLabel('📧 Gerar Email')
         .setStyle(ButtonStyle.Primary)
         .setEmoji('📬')
     );
@@ -290,7 +290,7 @@ async function criarCanalEmail(guild, member, emailData) {
     // Enviar embed inicial
     const embed = new EmbedBuilder()
       .setColor(0x00FF00)
-      .setTitle('✅ Email Hotmail Temporário Criado')
+      .setTitle('✅ Email Temporário Criado')
       .setDescription([
         `📧 **Seu email:** \`${emailData.email}\``,
         `⏰ **Expira:** <t:${expira}:R>`,
