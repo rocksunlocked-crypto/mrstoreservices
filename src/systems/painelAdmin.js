@@ -6,6 +6,7 @@
 const {
   EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle,
   ModalBuilder, TextInputBuilder, TextInputStyle, StringSelectMenuBuilder,
+  AttachmentBuilder,
 } = require('discord.js');
 const { db, Config, Produtos, Usuarios } = require('../database/database');
 const { isAdmin, isStaff, isLoja, isOwner } = require('../utils/permissions');
@@ -2686,7 +2687,56 @@ async function handlePainelAdminModals(interaction, client) {
 
     if (!itens.length) return interaction.editReply({ content: '❌ Sem estoque disponível para esta variante.' });
 
-    const conteudo = itens.join('\n');
+    // Formatar produtos numerados: 1 `PRODUTO`, 2 `PRODUTO`, etc.
+    const conteudoFormatado = itens.map((item, idx) => `${idx + 1} \`${item.trim()}\``).join('\n');
+    const preview = itens.slice(0, 5).map((item, idx) => `${idx + 1} \`${item.trim()}\``).join('\n');
+    const maisItens = itens.length > 5 ? `\n... e mais **${itens.length - 5}** itens` : '';
+
+    // Gerar arquivo .txt para download
+    let urlDownload = null;
+    try {
+      const fs     = require('fs');
+      const path   = require('path');
+      const crypto = require('crypto');
+      const token  = crypto.randomBytes(16).toString('hex');
+      const dir    = path.join(process.cwd(), 'data', 'downloads');
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+      
+      const header = `=== ${produto.nome} — ${variante.nome} ===\nEnviado por: ${interaction.user.username}\nMotivo: ${motivo}\nData: ${new Date().toLocaleString('pt-BR')}\nQuantidade: ${itens.length}\n${'='.repeat(40)}\n\n`;
+      fs.writeFileSync(path.join(dir, `${token}.txt`), header + itens.join('\n'), 'utf-8');
+      
+      const baseUrl  = process.env.BOT_URL || 'https://mrstoreservices.up.railway.app';
+      urlDownload = `${baseUrl}/download/${token}`;
+
+      // Enviar cópia para o canal de logs
+      try {
+        const canalLogs = interaction.guild.channels.cache.get('1545265490216095834');
+        if (canalLogs) {
+          const attachment = new AttachmentBuilder(path.join(dir, `${token}.txt`), { name: `envio-manual-${Date.now()}.txt` });
+          const logEmbed = new EmbedBuilder()
+            .setColor(config.colors.success)
+            .setTitle('📤 Envio Manual de Produto')
+            .addFields(
+              { name: '👤 Enviado por', value: `<@${interaction.user.id}>`, inline: true },
+              { name: '👥 Destinatário', value: discordId ? `<@${discordId}>` : 'Canal', inline: true },
+              { name: '🛍️ Produto', value: `${produto.nome} — ${variante.nome}`, inline: false },
+              { name: '📊 Quantidade', value: `${itens.length}`, inline: true },
+              { name: '📝 Motivo', value: motivo, inline: false },
+              { name: '📅 Data', value: new Date().toLocaleString('pt-BR'), inline: true }
+            )
+            .setTimestamp();
+          
+          await canalLogs.send({ embeds: [logEmbed], files: [attachment] }).catch(e => 
+            console.error('[Log Canal Envios]', e.message)
+          );
+        }
+      } catch (e) {
+        console.error('[Log Canal Envios]', e.message);
+      }
+    } catch (e) {
+      console.error('[Download TXT Envio Manual]', e.message);
+    }
+
     const embedProduto = new EmbedBuilder()
       .setColor(config.colors.success)
       .setTitle(`📦 ${produto.nome}`)
@@ -2696,15 +2746,29 @@ async function handlePainelAdminModals(interaction, client) {
         `**Variante:** ${variante.nome}`,
         `**Quantidade:** ${itens.length}`,
       ].filter(Boolean).join('\n'))
-      .addFields({ name: '🎁 Produto', value: `\`\`\`\n${conteudo.slice(0, 900)}\n\`\`\`` })
+      .addFields({ 
+        name: '🎁 Seus Produtos', 
+        value: preview + maisItens + (urlDownload ? `\n\n📥 [**Clique aqui para baixar o arquivo completo**](${urlDownload})\n> Link válido por **48 horas**` : ''), 
+        inline: false 
+      })
       .setTimestamp()
       .setFooter({ text: `Enviado por ${interaction.user.username} • Máximo Store` });
+
+    const row = new ActionRowBuilder();
+    if (urlDownload) {
+      row.addComponents(
+        new ButtonBuilder().setLabel('📥 Baixar Arquivo').setStyle(ButtonStyle.Link).setURL(urlDownload)
+      );
+    }
 
     // Se tem Discord ID → envia DM
     if (discordId) {
       const membro = await interaction.guild.members.fetch(discordId).catch(() => null);
       if (!membro) return interaction.editReply({ content: `❌ Usuário \`${discordId}\` não encontrado no servidor.` });
-      const enviado = await membro.send({ embeds: [embedProduto] }).catch(() => null);
+      const enviado = await membro.send({ 
+        embeds: [embedProduto],
+        components: urlDownload ? [row] : []
+      }).catch(() => null);
       if (!enviado) return interaction.editReply({ content: `❌ Não foi possível enviar DM para <@${discordId}> (DMs fechadas).` });
 
       const { log } = require('../utils/logger');
@@ -2716,7 +2780,10 @@ async function handlePainelAdminModals(interaction, client) {
     // Sem Discord ID → envia no canal onde está o painel/menu
     const canal = interaction.channel;
     if (!canal) return interaction.editReply({ content: '❌ Canal não encontrado.' });
-    await canal.send({ embeds: [embedProduto] }).catch(() => {});
+    await canal.send({ 
+      embeds: [embedProduto],
+      components: urlDownload ? [row] : []
+    }).catch(() => {});
 
     const { log } = require('../utils/logger');
     await log('envio_manual', { executor: interaction.user.id, descricao: `📤 Envio manual: ${produto.nome} (${variante.nome}) x${itens.length} no canal <#${canal.id}> — ${motivo}` });
