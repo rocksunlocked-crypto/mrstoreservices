@@ -1406,49 +1406,59 @@ async function handlePainelAdmin(interaction, client) {
 
   if (id === 'pa_listar_carrinhos' || id.startsWith('pa_listar_produtos_pg_')) {
     try {
-      await interaction.deferReply({ ephemeral: true });
+      // Se for navegação, usa update; se for primeiro clique, usa deferReply
+      const isPaginacao = id.startsWith('pa_listar_produtos_pg_');
+      if (!isPaginacao) {
+        await interaction.deferReply({ ephemeral: true });
+      }
       
       // Paginação
-      const pagina = id.startsWith('pa_listar_produtos_pg_') 
-        ? parseInt(id.split('_').pop()) 
-        : 1;
-      const porPagina = 5; // Reduzido para 5
+      const pagina = isPaginacao ? parseInt(id.split('_').pop()) : 1;
+      const porPagina = 5;
       const offset = (pagina - 1) * porPagina;
       
-      const total = db.prepare('SELECT COUNT(*) as c FROM produtos').get().c;
+      const total = db.prepare('SELECT COUNT(*) as c FROM produtos WHERE ativo=1').get().c;
       const totalPaginas = Math.ceil(total / porPagina);
       
       const lista = db.prepare(`
         SELECT * FROM produtos 
-        ORDER BY ativo DESC, vendas DESC 
+        WHERE ativo=1
+        ORDER BY vendas DESC, criado_em DESC
         LIMIT ? OFFSET ?
       `).all(porPagina, offset);
       
       if (!lista.length) {
-        return interaction.editReply({ content: '📦 Nenhum produto cadastrado.' });
+        const msg = { content: '📦 Nenhum produto cadastrado.', embeds: [], components: [] };
+        return isPaginacao ? interaction.update(msg) : interaction.editReply(msg);
       }
       
       const embed = new EmbedBuilder()
-        .setColor(config.colors.primary)
-        .setTitle(`📦 Produtos`)
-        .setDescription(`Mostrando ${lista.length} de ${total} produtos • Página ${pagina}/${totalPaginas}`)
+        .setColor(config.colors.loja)
+        .setTitle(`🛒 Produtos Ativos`)
+        .setDescription(`📄 Página ${pagina}/${totalPaginas} • ${total} produto(s) no total`)
         .setTimestamp()
         .setFooter({ text: 'Máximo Store • Painel Admin' });
       
       for (const p of lista) {
         try {
-          const digEst = db.prepare('SELECT COUNT(*) as c FROM estoque_digital WHERE produto_id=? AND usado=0').get(p.id);
-          const varEst = db.prepare("SELECT COUNT(*) as c FROM estoque_variante ev JOIN variantes_produto vp ON ev.variante_id=vp.id WHERE vp.produto_id=? AND ev.usado=0").get(p.id);
-          const totalEst = (digEst?.c || 0) + (varEst?.c || 0);
+          // Buscar variantes do produto
+          const vars = db.prepare('SELECT * FROM variantes_produto WHERE produto_id=? AND ativo=1 ORDER BY ordem').all(p.id);
+          
+          let linhasVariantes = '';
+          if (vars.length > 0) {
+            linhasVariantes = vars.map(v => {
+              const estVar = db.prepare('SELECT COUNT(*) as c FROM estoque_variante WHERE variante_id=? AND usado=0').get(v.id);
+              const estoque = v.estoque_infinito === 1 ? '∞' : (estVar?.c || 0);
+              return `  • **${v.nome}** — R$ ${Number(v.preco).toFixed(2)} | Estoque: ${estoque} | \`${v.id.slice(0,8)}\``;
+            }).join('\n');
+          } else {
+            const digEst = db.prepare('SELECT COUNT(*) as c FROM estoque_digital WHERE produto_id=? AND usado=0').get(p.id);
+            linhasVariantes = `  • Estoque digital: ${digEst?.c || 0} un.`;
+          }
           
           embed.addFields({
             name: `${p.ativo ? '🟢' : '🔴'} ${p.nome}`,
-            value: [
-              `💵 **R$ ${(p.preco_promo || p.preco).toFixed(2)}**`,
-              `📦 Estoque: **${totalEst > 0 ? totalEst : p.estoque === -1 ? '∞' : p.estoque}**`,
-              `🛒 Vendas: **${p.vendas}**`,
-              `🆔 \`${p.id.slice(0, 8)}\``,
-            ].join(' • '),
+            value: `🆔 \`${p.id.slice(0, 8)}\` • 🛒 **${p.vendas}** vendas\n${linhasVariantes}`,
             inline: false,
           });
         } catch (e) {
@@ -1480,14 +1490,22 @@ async function handlePainelAdmin(interaction, client) {
         rows.push(navRow);
       }
       
-      return interaction.editReply({ embeds: [embed], components: rows });
+      // Botão voltar
+      const voltarRow = new ActionRowBuilder().addComponents(
+        btn('pa_menu_loja', '🔙 Voltar ao Menu Loja', ButtonStyle.Secondary)
+      );
+      rows.push(voltarRow);
+      
+      const msg = { embeds: [embed], components: rows, content: '' };
+      return isPaginacao ? interaction.update(msg) : interaction.editReply(msg);
     } catch (error) {
       console.error('[PainelAdmin] Erro ao listar produtos:', error);
-      return interaction.editReply({ 
+      const msg = { 
         content: `❌ Erro ao carregar produtos: ${error.message}\n\nTente novamente ou contate o suporte.`,
         embeds: [],
         components: []
-      });
+      };
+      return id.startsWith('pa_listar_produtos_pg_') ? interaction.update(msg) : interaction.editReply(msg);
     }
   }
 
