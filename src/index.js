@@ -205,6 +205,10 @@ client.once('ready', async () => {
     const { enviarPainel2FA } = require('./systems/painel2FA');
     enviarPainel2FA(client).catch(() => {});
 
+    // Painel Hotmail temporário fixo
+    const { enviarPainelHotmail } = require('./systems/tempMailHotmail');
+    setTimeout(() => enviarPainelHotmail(guild), 3000);
+
     // Painel de Ranking fixo (atualiza a cada 2s)
     const { iniciarPainelRanking } = require('./systems/painelRanking');
     setTimeout(() => iniciarPainelRanking(client), 5000); // Aguarda 5s após bot ficar pronto
@@ -560,6 +564,18 @@ client.on('interactionCreate', async (interaction) => {
       if (id.startsWith('2fa_')) {
         const { handle2FAInteraction } = require('./systems/painel2FA');
         return handle2FAInteraction(interaction);
+      }
+
+      // Email Temporário
+      if (id.startsWith('tempmail_')) {
+        const { handleTempMailButton } = require('./systems/tempMail');
+        return handleTempMailButton(interaction);
+      }
+
+      // Email Hotmail com canal dedicado
+      if (id.startsWith('hotmail_')) {
+        const { handleHotmailButton } = require('./systems/tempMailHotmail');
+        return handleHotmailButton(interaction);
       }
 
       // Sistema de tickets avançado — todos os prefixos

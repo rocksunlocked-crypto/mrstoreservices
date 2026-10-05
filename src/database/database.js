@@ -502,6 +502,36 @@ async function init() {
     )`);
   } catch {}
 
+  // Tabela de emails temporários (integração 22.do)
+  try {
+    db.exec(`CREATE TABLE IF NOT EXISTS emails_temporarios (
+      id          TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+      usuario_id  TEXT NOT NULL,
+      email       TEXT NOT NULL,
+      username    TEXT NOT NULL,
+      domain      TEXT NOT NULL,
+      tipo        TEXT DEFAULT 'normal',
+      criado_em   INTEGER DEFAULT (strftime('%s','now')),
+      expira_em   INTEGER NOT NULL,
+      deletado    INTEGER DEFAULT 0
+    )`);
+  } catch {}
+
+  // Tabela de emails Hotmail com canal dedicado
+  try {
+    db.exec(`CREATE TABLE IF NOT EXISTS emails_hotmail (
+      id          TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+      usuario_id  TEXT NOT NULL,
+      canal_id    TEXT UNIQUE NOT NULL,
+      email       TEXT NOT NULL,
+      username    TEXT NOT NULL,
+      domain      TEXT NOT NULL,
+      criado_em   INTEGER DEFAULT (strftime('%s','now')),
+      expira_em   INTEGER NOT NULL,
+      deletado    INTEGER DEFAULT 0
+    )`);
+  } catch {}
+
   // Configurações padrão
   const cfgStmt = db.prepare(`INSERT OR IGNORE INTO configuracoes (chave, valor, tipo, descricao) VALUES (?, ?, ?, ?)`);
   const defaults = [
