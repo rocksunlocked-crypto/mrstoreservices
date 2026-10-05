@@ -127,6 +127,7 @@ module.exports = async (interaction, client) => {
     if (id === 'ap_cancelar') return sub.planoCancelar(interaction);
     // Estoque
     if (id === 'ae_variante') return sub.estoqueModalVariante(interaction);
+    if (id.startsWith('ae_pagina_') && id !== 'ae_pagina_info') return sub.estoquePaginar(interaction);
     if (id === 'ae_slot1')    return sub.estoqueModalSlot(interaction, 1);
     if (id === 'ae_slot2')    return sub.estoqueModalSlot(interaction, 2);
     if (id === 'ae_slot3')    return sub.estoqueModalSlot(interaction, 3);

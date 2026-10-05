@@ -84,7 +84,6 @@ module.exports = async (interaction, client) => {
     if (id === 'aem_slot2') return sub.estoqueProcessarSlot(interaction, 2);
     if (id === 'aem_slot3') return sub.estoqueProcessarSlot(interaction, 3);
     if (id === 'aem_slot4') return sub.estoqueProcessarSlot(interaction, 4);
-    if (id.startsWith('aem_buscar_variante_')) return sub.estoqueBuscarVariante(interaction);
     if (id === 'cum_codigo')   return sub.cupomProcessar(interaction, 'codigo');
     if (id === 'cum_valor')    return sub.cupomProcessar(interaction, 'valor');
     if (id === 'cum_validade') return sub.cupomProcessar(interaction, 'validade');

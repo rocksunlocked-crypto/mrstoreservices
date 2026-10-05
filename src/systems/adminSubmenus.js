@@ -256,91 +256,79 @@ async function estoqueSelectProduto(interaction) {
 
   if (!variantes.length) return interaction.reply({ content: '❌ Nenhuma variante encontrada para este produto.', ephemeral: true });
 
-  // Se tiver mais de 25, criar sistema de busca
-  if (variantes.length > 25) {
-    const { StringSelectMenuOptionBuilder } = require('discord.js');
-    
-    // Mostrar as primeiras 24 + opção "Buscar por nome"
-    const opcoes = variantes.slice(0, 24).map(v =>
-      new StringSelectMenuOptionBuilder()
-        .setValue(v.id)
-        .setLabel(`${v.nome}`.slice(0, 100))
-        .setDescription(`R$ ${Number(v.preco).toFixed(2)} • ${v.estoque} em estoque • ID: ${v.id.slice(0,8)}`),
-    );
-    
-    // Adicionar opção de buscar
-    opcoes.push(
-      new StringSelectMenuOptionBuilder()
-        .setValue(`BUSCAR_${produtoId}`)
-        .setLabel('🔍 Buscar variante por nome/ID')
-        .setDescription(`${variantes.length} variantes no total - use busca para encontrar`)
-        .setEmoji('🔍')
-    );
+  // Salvar info do produto na sessão para paginação
+  set(interaction.user.id, 'estoque_paginacao', { produtoId, totalVariantes: variantes.length });
 
-    const row = new ActionRowBuilder().addComponents(
-      new StringSelectMenuBuilder()
-        .setCustomId('ae_select_variante')
-        .setPlaceholder(`2️⃣ Selecione a variante (${variantes.length} no total)...`)
-        .addOptions(opcoes),
-    );
-    
-    const embed = new EmbedBuilder()
-      .setColor(0xFF9500)
-      .setTitle(`⚠️ ${produto.nome} tem ${variantes.length} variantes`)
-      .setDescription([
-        `> Mostrando apenas as **primeiras 24** variantes.`,
-        `> `,
-        `> **Para encontrar sua variante:**`,
-        `> • Selecione uma das listadas abaixo`,
-        `> • **OU** selecione **🔍 Buscar** e digite o nome ou ID`,
-      ].join('\n'));
-    
-    return interaction.update({ content: '', embeds: [embed], components: [row] });
-  }
+  // Mostrar primeira página (0)
+  return mostrarPaginaVariantes(interaction, produtoId, produto.nome, variantes, 0, true);
+}
 
-  // Se tiver 25 ou menos, mostrar normalmente
+function mostrarPaginaVariantes(interaction, produtoId, produtoNome, variantes, pagina, isUpdate = false) {
+  const porPagina = 24; // Deixar 1 slot livre para navegação se necessário
+  const totalPaginas = Math.ceil(variantes.length / porPagina);
+  const inicio = pagina * porPagina;
+  const fim = Math.min(inicio + porPagina, variantes.length);
+  const variantesPagina = variantes.slice(inicio, fim);
+
   const { StringSelectMenuOptionBuilder } = require('discord.js');
-  const opcoes = variantes.map(v =>
+  const opcoes = variantesPagina.map(v =>
     new StringSelectMenuOptionBuilder()
       .setValue(v.id)
       .setLabel(`${v.nome}`.slice(0, 100))
       .setDescription(`R$ ${Number(v.preco).toFixed(2)} • ${v.estoque} em estoque • ID: ${v.id.slice(0,8)}`),
   );
 
-  const row = new ActionRowBuilder().addComponents(
-    new StringSelectMenuBuilder()
-      .setCustomId('ae_select_variante')
-      .setPlaceholder('2️⃣ Selecione a variante...')
-      .addOptions(opcoes),
-  );
-  return interaction.update({ content: `📦 **${produto.nome}** — Selecione a variante:`, components: [row], embeds: [] });
+  const selectMenu = new StringSelectMenuBuilder()
+    .setCustomId('ae_select_variante')
+    .setPlaceholder(`Selecione a variante (${inicio + 1}-${fim} de ${variantes.length})`)
+    .addOptions(opcoes);
+
+  const rows = [new ActionRowBuilder().addComponents(selectMenu)];
+
+  // Adicionar botões de navegação se tiver mais de 1 página
+  if (totalPaginas > 1) {
+    const btnAnterior = new ButtonBuilder()
+      .setCustomId(`ae_pagina_${produtoId}_${pagina - 1}`)
+      .setLabel('◀ Anterior')
+      .setStyle(ButtonStyle.Primary)
+      .setDisabled(pagina === 0);
+
+    const btnInfo = new ButtonBuilder()
+      .setCustomId('ae_pagina_info')
+      .setLabel(`Página ${pagina + 1}/${totalPaginas}`)
+      .setStyle(ButtonStyle.Secondary)
+      .setDisabled(true);
+
+    const btnProximo = new ButtonBuilder()
+      .setCustomId(`ae_pagina_${produtoId}_${pagina + 1}`)
+      .setLabel('Próximo ▶')
+      .setStyle(ButtonStyle.Primary)
+      .setDisabled(pagina >= totalPaginas - 1);
+
+    rows.push(new ActionRowBuilder().addComponents(btnAnterior, btnInfo, btnProximo));
+  }
+
+  const embed = new EmbedBuilder()
+    .setColor(0x57F287)
+    .setTitle(`📦 ${produtoNome}`)
+    .setDescription([
+      `> Selecione a variante para adicionar estoque`,
+      `> `,
+      `> **Total:** ${variantes.length} variante(s)`,
+      totalPaginas > 1 ? `> **Página:** ${pagina + 1}/${totalPaginas}` : '',
+    ].filter(Boolean).join('\n'));
+
+  const payload = { embeds: [embed], components: rows };
+
+  if (isUpdate) {
+    return interaction.update(payload).catch(() => interaction.editReply(payload));
+  } else {
+    return interaction.reply({ ...payload, ephemeral: true });
+  }
 }
 
 async function estoqueSelectVariante(interaction) {
   const varianteId = interaction.values[0];
-  
-  // Se for comando de busca
-  if (varianteId.startsWith('BUSCAR_')) {
-    const produtoId = varianteId.replace('BUSCAR_', '');
-    const produto = db.prepare('SELECT nome FROM produtos WHERE id=?').get(produtoId);
-    
-    const modal = new ModalBuilder()
-      .setCustomId(`aem_buscar_variante_${produtoId}`)
-      .setTitle(`🔍 Buscar Variante`);
-    
-    modal.addComponents(
-      new ActionRowBuilder().addComponents(
-        new TextInputBuilder()
-          .setCustomId('busca')
-          .setLabel('Nome ou ID da variante')
-          .setStyle(TextInputStyle.Short)
-          .setRequired(true)
-          .setPlaceholder('Digite o nome ou primeiros caracteres do ID')
-      )
-    );
-    
-    return interaction.showModal(modal);
-  }
   
   // Seleção normal
   const variante   = db.prepare('SELECT * FROM variantes_produto WHERE id=?').get(varianteId);
@@ -348,6 +336,24 @@ async function estoqueSelectVariante(interaction) {
   set(interaction.user.id, 'estoque', { varianteId, varianteNome: `${produto?.nome || '?'} — ${variante?.nome || '?'}` });
   await interaction.deferUpdate().catch(() => {});
   return rerenderEstoque(interaction);
+}
+
+async function estoquePaginar(interaction) {
+  // Formato: ae_pagina_{produtoId}_{numeroPagina}
+  const parts = interaction.customId.split('_');
+  const produtoId = parts[2];
+  const novaPagina = parseInt(parts[3]);
+  
+  const produto = db.prepare('SELECT * FROM produtos WHERE id=?').get(produtoId);
+  if (!produto) return interaction.reply({ content: '❌ Produto não encontrado.', ephemeral: true });
+  
+  const variantes = db.prepare(`
+    SELECT vp.*,
+      (SELECT COUNT(*) FROM estoque_variante WHERE variante_id=vp.id AND usado=0) as estoque
+    FROM variantes_produto vp WHERE vp.produto_id=? AND vp.ativo=1 ORDER BY vp.ordem
+  `).all(produtoId);
+  
+  return mostrarPaginaVariantes(interaction, produtoId, produto.nome, variantes, novaPagina, true);
 }
 
 async function estoqueModalSlot(interaction, slot) {
@@ -371,56 +377,6 @@ async function estoqueProcessarSlot(interaction, slot) {
   const conteudo = interaction.fields.getTextInputValue('conteudo').trim();
   set(interaction.user.id, 'estoque', { [`slot${slot}`]: conteudo || null });
   return rerenderEstoque(interaction);
-}
-
-async function estoqueBuscarVariante(interaction) {
-  await interaction.deferReply({ ephemeral: true });
-  
-  const produtoId = interaction.customId.replace('aem_buscar_variante_', '');
-  const busca = interaction.fields.getTextInputValue('busca').trim().toLowerCase();
-  
-  if (!busca) {
-    return interaction.editReply({ content: '❌ Digite algo para buscar!' });
-  }
-  
-  // Buscar variantes que contenham o texto
-  const variantes = db.prepare(`
-    SELECT vp.*,
-      (SELECT COUNT(*) FROM estoque_variante WHERE variante_id=vp.id AND usado=0) as estoque
-    FROM variantes_produto vp 
-    WHERE vp.produto_id=? AND vp.ativo=1 
-    AND (LOWER(vp.nome) LIKE ? OR vp.id LIKE ?)
-    ORDER BY vp.ordem
-    LIMIT 25
-  `).all(produtoId, `%${busca}%`, `${busca}%`);
-  
-  if (!variantes.length) {
-    return interaction.editReply({ 
-      content: `❌ Nenhuma variante encontrada com: **${busca}**\n\n💡 Tente buscar por:\n• Parte do nome\n• Primeiros caracteres do ID` 
-    });
-  }
-  
-  const { StringSelectMenuOptionBuilder } = require('discord.js');
-  const opcoes = variantes.map(v =>
-    new StringSelectMenuOptionBuilder()
-      .setValue(v.id)
-      .setLabel(`${v.nome}`.slice(0, 100))
-      .setDescription(`R$ ${Number(v.preco).toFixed(2)} • ${v.estoque} em estoque • ID: ${v.id.slice(0,8)}`),
-  );
-  
-  const row = new ActionRowBuilder().addComponents(
-    new StringSelectMenuBuilder()
-      .setCustomId('ae_select_variante')
-      .setPlaceholder(`Encontrado ${variantes.length} resultado(s) para "${busca}"`)
-      .addOptions(opcoes),
-  );
-  
-  const embed = new EmbedBuilder()
-    .setColor(0x57F287)
-    .setTitle(`🔍 Resultados da Busca: "${busca}"`)
-    .setDescription(`> Encontrado **${variantes.length}** variante(s)`);
-  
-  return interaction.editReply({ embeds: [embed], components: [row] });
 }
 
 async function estoqueSalvar(interaction) {
@@ -655,8 +611,8 @@ module.exports = {
   abrirPlano, planoModalProduto, planoSelectProduto,
   planoModalDados, planoProcessarDados, planoSalvar, planoCancelar,
   // Estoque
-  abrirEstoque, estoqueModalVariante, estoqueSelectProduto, estoqueSelectVariante,
-  estoqueModalSlot, estoqueProcessarSlot, estoqueBuscarVariante, estoqueSalvar, estoqueCancelar,
+  abrirEstoque, estoqueModalVariante, estoqueSelectProduto, estoqueSelectVariante, estoquePaginar,
+  estoqueModalSlot, estoqueProcessarSlot, estoqueSalvar, estoqueCancelar,
   // Cupom
   abrirCupom, cupomModal, cupomProcessar, cupomSalvar, cupomCancelar,
 };
