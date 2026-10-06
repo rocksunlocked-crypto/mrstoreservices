@@ -87,13 +87,20 @@ async function iniciarPainelRanking(client) {
       return;
     }
 
-    // Buscar mensagem existente ou criar nova
-    const msgs = await canal.messages.fetch({ limit: 10 }).catch(() => null);
+    // Buscar e limpar mensagens antigas do bot
+    const msgs = await canal.messages.fetch({ limit: 50 }).catch(() => null);
     if (msgs) {
-      mensagemRanking = msgs.find(m => 
-        m.author.id === client.user.id && 
-        m.embeds[0]?.title?.includes('TOP 10')
-      );
+      const minhasMensagens = msgs.filter(m => m.author.id === client.user.id);
+      
+      // Se já existe mensagem de ranking, usar ela
+      mensagemRanking = minhasMensagens.find(m => m.embeds[0]?.title?.includes('TOP 10'));
+      
+      // Deletar outras mensagens antigas do bot neste canal para evitar duplicatas
+      for (const msg of minhasMensagens.values()) {
+        if (msg.id !== mensagemRanking?.id) {
+          await msg.delete().catch(() => {});
+        }
+      }
     }
 
     if (!mensagemRanking) {
@@ -109,7 +116,7 @@ async function iniciarPainelRanking(client) {
     // Limpar interval anterior se existir
     if (intervalId) clearInterval(intervalId);
 
-    // Atualizar a cada 2 segundos
+    // Atualizar a cada 30 segundos (ao invés de 2s para evitar spam)
     intervalId = setInterval(async () => {
       try {
         if (!mensagemRanking) return;
@@ -122,9 +129,9 @@ async function iniciarPainelRanking(client) {
           iniciarPainelRanking(client);
         }
       }
-    }, 2000); // 2 segundos
+    }, 30000); // 30 segundos
 
-    console.log('[Ranking] 🔄 Atualização automática iniciada (2s)');
+    console.log('[Ranking] 🔄 Atualização automática iniciada (30s)');
 
   } catch (error) {
     console.error('[Ranking] Erro ao iniciar:', error.message);
