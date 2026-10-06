@@ -173,7 +173,9 @@ module.exports = function iniciarScheduler(client) {
   });
 
   // ── KPI: Ranking de Coins — atualiza a cada 2s no canal fixo ────────────────
-  const CANAL_KPI_COINS = '1544885444578254919';
+  // ── RANKING DE COINS DESATIVADO ───────────────────────────────────────────
+  // O usuário quer apenas o ranking de contribuintes (TOP 10 VIP), não coins
+  // const CANAL_KPI_COINS = '1544885444578254919';
 
   // ── Polling de verificação de pagamento PIX (a cada 3 segundos) ─────────────
   setInterval(async () => {
@@ -201,6 +203,11 @@ module.exports = function iniciarScheduler(client) {
       console.error('[Polling PIX]', err.message);
     }
   }, 3000); // 3 segundos
+  
+  /*
+  // ══════════════════════════════════════════════════════════════════════════
+  // RANKING DE COINS DESATIVADO - código comentado
+  // ══════════════════════════════════════════════════════════════════════════
   let kpiMsgId = null;
 
   async function atualizarKpiCoins() {
@@ -305,6 +312,8 @@ module.exports = function iniciarScheduler(client) {
     await atualizarKpiCoins();
     setInterval(atualizarKpiCoins, 30000); // 30 segundos
   }, 5000);
+  */
+  // ══════════════════════════════════════════════════════════════════════════
 };
 
   console.log('⏰ Scheduler iniciado com sucesso!');
