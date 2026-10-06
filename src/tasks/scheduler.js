@@ -266,13 +266,29 @@ module.exports = function iniciarScheduler(client) {
         }
       }
 
-      // Deletar msgs antigas do bot e criar nova
-      const msgs = await canal.messages.fetch({ limit: 10 }).catch(() => null);
+      // Se não tem mensagem salva, buscar existente ou criar nova
+      const msgs = await canal.messages.fetch({ limit: 50 }).catch(() => null);
       if (msgs) {
+        // Procurar mensagem existente do ranking
+        const msgExistente = msgs.find(m => 
+          m.author.id === guild.client.user.id && 
+          m.embeds[0]?.title?.includes('Ranking de Coins')
+        );
+        
+        if (msgExistente) {
+          // Editar mensagem existente
+          await msgExistente.edit({ embeds: [embed] }).catch(() => {});
+          kpiMsgId = msgExistente.id;
+          return;
+        }
+        
+        // Deletar outras mensagens antigas do bot (limpeza única)
         for (const [, m] of msgs.filter(m => m.author.id === guild.client.user.id)) {
           await m.delete().catch(() => {});
         }
       }
+
+      // Criar nova mensagem apenas se não existe nenhuma
       const nova = await canal.send({ embeds: [embed] });
       kpiMsgId = nova.id;
     } catch {}
@@ -284,10 +300,10 @@ module.exports = function iniciarScheduler(client) {
     return '█'.repeat(preenchido) + '░'.repeat(tamanho - preenchido);
   }
 
-  // Primeira execução imediata, depois a cada 2s
+  // Primeira execução após 5s, depois a cada 30s
   setTimeout(async () => {
     await atualizarKpiCoins();
-    setInterval(atualizarKpiCoins, 8000);
+    setInterval(atualizarKpiCoins, 30000); // 30 segundos
   }, 5000);
 };
 
