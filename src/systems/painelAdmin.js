@@ -2048,6 +2048,7 @@ async function handlePainelAdmin(interaction, client) {
 
 // ─── Handler de modais pam_* ──────────────────────────────────────────────────
 async function handlePainelAdminModals(interaction, client) {
+  console.log('[DEBUG] handlePainelAdminModals chamado com customId:', interaction.customId);
   const id = interaction.customId;
   try {
 
@@ -2939,6 +2940,7 @@ async function handlePainelAdminModals(interaction, client) {
 
   // ─── Modals de Reset de IP ────────────────────────────────────────────────
   if (id === 'pam_reset_ip_user') {
+    console.log('[DEBUG] Modal pam_reset_ip_user recebido');
     await interaction.deferReply({ ephemeral: true });
     
     const discordId = interaction.fields.getTextInputValue('discord_id').trim();
@@ -2978,6 +2980,7 @@ async function handlePainelAdminModals(interaction, client) {
   }
 
   if (id === 'pam_limpar_ips') {
+    console.log('[DEBUG] Modal pam_limpar_ips recebido');
     await interaction.deferReply({ ephemeral: true });
     
     const confirmacao = interaction.fields.getTextInputValue('confirmacao').trim().toUpperCase();

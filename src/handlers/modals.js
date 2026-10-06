@@ -59,6 +59,7 @@ module.exports = async (interaction, client) => {
 
   // ── Modais do painel admin central (pam_*) ────────────────────────────────
   if (id.startsWith('pam_')) {
+    console.log('[DEBUG] Modal pam_* detectado em modals.js:', id);
     return handlePainelAdminModals(interaction, client);
   }
 
