@@ -491,10 +491,22 @@ client.on('guildMemberAdd', async (member) => {
   if (dmAtivo) member.send({ embeds: [dmAtivo.embed], components: dmAtivo.components ?? [] }).catch(() => {});
 
   atualizarMembros(member.guild);
+  
+  // Log detalhado de entrada
+  const accountAge = Math.floor((Date.now() - member.user.createdTimestamp) / (1000 * 60 * 60 * 24));
+  const createdAt = Math.floor(member.user.createdTimestamp / 1000);
+  
   logMr(client, member.guild, 'membro_entrou', {
-    acao: 'Membro Entrou',
+    acao: 'Novo Membro',
     alvo: `${member.user.tag} (<@${member.user.id}>)`,
-    detalhes: `Conta criada: <t:${Math.floor(member.user.createdTimestamp / 1000)}:R>`,
+    detalhes: [
+      `👤 **Username:** ${member.user.username}`,
+      `🆔 **ID:** \`${member.user.id}\``,
+      `📅 **Conta criada:** <t:${createdAt}:F> (<t:${createdAt}:R>)`,
+      `⏳ **Idade da conta:** ${accountAge} dia(s)`,
+      `🤖 **Bot:** ${member.user.bot ? 'Sim' : 'Não'}`,
+      `📊 **Total de membros:** ${member.guild.memberCount}`,
+    ].join('\n'),
   });
 });
 
@@ -503,9 +515,28 @@ client.on('guildMemberRemove', async (member) => {
   if (member.guild.id !== config.guildId || member.user.bot) return;
   await despedirMembro(member);
   atualizarMembros(member.guild);
+  
+  // Calcular tempo no servidor
+  const joinedAt = member.joinedTimestamp ? Math.floor(member.joinedTimestamp / 1000) : null;
+  const tempoNoServidor = joinedAt ? Math.floor((Date.now() - member.joinedTimestamp) / (1000 * 60 * 60 * 24)) : null;
+  
+  // Informações sobre cargos
+  const cargos = member.roles.cache
+    .filter(r => r.id !== member.guild.id) // Remover @everyone
+    .map(r => r.name)
+    .slice(0, 5); // Máximo 5 cargos
+  
   logMr(client, member.guild, 'membro_saiu', {
     acao: 'Membro Saiu',
-    alvo: `${member.user.tag} (\`${member.user.id}\`)`,
+    alvo: `${member.user.tag} (<@${member.user.id}>)`,
+    detalhes: [
+      `👤 **Username:** ${member.user.username}`,
+      `🆔 **ID:** \`${member.user.id}\``,
+      joinedAt ? `📅 **Entrou em:** <t:${joinedAt}:F>` : '',
+      tempoNoServidor ? `⏱️ **Tempo no servidor:** ${tempoNoServidor} dia(s)` : '',
+      cargos.length > 0 ? `🎭 **Cargos:** ${cargos.join(', ')}` : '🎭 **Cargos:** Nenhum',
+      `📊 **Total de membros:** ${member.guild.memberCount}`,
+    ].filter(Boolean).join('\n'),
   });
 });
 

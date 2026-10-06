@@ -22,8 +22,8 @@ const CORES = {
   avaliacao_aprovada: 0x57F287,
   avaliacao_negada:   0xED4245,
   avaliacao_bloqueio: 0x000000,
-  membro_entrou:    0x43B581,
-  membro_saiu:      0xED4245,
+  membro_entrou:    0x57F287, // Verde brilhante
+  membro_saiu:      0xF04747, // Vermelho suave
   sorteio_finalizado: 0xFFD700,
   compra:           0x00FF88,
   punição:          0xFF0000,
@@ -40,8 +40,8 @@ const ICONES = {
   avaliacao_aprovada:'⭐',
   avaliacao_negada:  '❌',
   avaliacao_bloqueio:'🔨',
-  membro_entrou:     '👋',
-  membro_saiu:       '🚪',
+  membro_entrou:     '📥', // Entrada
+  membro_saiu:       '📤', // Saída
   sorteio_finalizado:'🏁',
   compra:            '🛍️',
   punição:           '🔨',
@@ -78,14 +78,27 @@ async function log(client, guild, tipo, dados = {}) {
       .setTimestamp();
 
     const fields = [];
-    if (dados.responsavel) fields.push({ name: '👤 Responsável', value: dados.responsavel, inline: true });
-    if (dados.alvo)        fields.push({ name: '🎯 Alvo',        value: dados.alvo,         inline: true });
-    if (dados.canal)       fields.push({ name: '📢 Canal',       value: dados.canal,        inline: true });
-    if (dados.detalhes)    fields.push({ name: '📋 Detalhes',    value: dados.detalhes,     inline: false });
-    if (dados.extra)       fields.push({ name: '➕ Extra',        value: dados.extra,        inline: false });
-    fields.push({ name: '🕐 Horário', value: `<t:${ts}:F>`, inline: true });
+    
+    // Para logs de entrada/saída, formato especial mais bonito
+    if (tipo === 'membro_entrou' || tipo === 'membro_saiu') {
+      if (dados.alvo) {
+        embed.setDescription(dados.alvo);
+      }
+      if (dados.detalhes) {
+        embed.addFields({ name: '📋 Informações', value: dados.detalhes, inline: false });
+      }
+      embed.setFooter({ text: `Máximo Store • ${tipo === 'membro_entrou' ? 'Bem-vindo' : 'Até logo'}` });
+    } else {
+      // Formato padrão para outros logs
+      if (dados.responsavel) fields.push({ name: '👤 Responsável', value: dados.responsavel, inline: true });
+      if (dados.alvo)        fields.push({ name: '🎯 Alvo',        value: dados.alvo,         inline: true });
+      if (dados.canal)       fields.push({ name: '📢 Canal',       value: dados.canal,        inline: true });
+      if (dados.detalhes)    fields.push({ name: '📋 Detalhes',    value: dados.detalhes,     inline: false });
+      if (dados.extra)       fields.push({ name: '➕ Extra',        value: dados.extra,        inline: false });
+      fields.push({ name: '🕐 Horário', value: `<t:${ts}:F>`, inline: true });
 
-    if (fields.length) embed.setFields(fields);
+      if (fields.length) embed.setFields(fields);
+    }
 
     await canal.send({ embeds: [embed] });
   } catch (err) {
