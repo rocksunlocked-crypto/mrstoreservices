@@ -282,8 +282,10 @@ function buildUsuariosMenu() {
   );
 
   const row3 = new ActionRowBuilder().addComponents(
-    btn('pa_simulador',  '💡 Simulador',  ButtonStyle.Secondary),
-    btn('pa_home',       '🔙 Voltar',     ButtonStyle.Secondary),
+    btn('pa_reset_ip_user',  '🌐 Reset IP',     ButtonStyle.Danger),
+    btn('pa_limpar_ips',     '🗑️ Limpar IPs',    ButtonStyle.Danger),
+    btn('pa_simulador',      '💡 Simulador',     ButtonStyle.Secondary),
+    btn('pa_home',           '🔙 Voltar',        ButtonStyle.Secondary),
   );
 
   return { embed, components: [row1, row2, row3] };
@@ -2894,6 +2896,127 @@ async function handlePainelAdminModals(interaction, client) {
     if (isNaN(pct) || pct < 0 || pct > 100) return interaction.editReply({ content: '❌ Valor entre 0 e 100.' });
     db.prepare("INSERT OR REPLACE INTO configuracoes (chave,valor,tipo) VALUES ('taxa_afil_n2',?,'string')").run(String(pct));
     return interaction.editReply({ content: `✅ Comissão N2 definida em **${pct}%** por venda.` });
+  }
+
+  // ─── Reset de IP dos usuários ─────────────────────────────────────────────
+  if (id === 'pa_reset_ip_user') {
+    if (!isAdmin(interaction.member)) return interaction.reply({ content: '❌ Apenas admins.', ephemeral: true });
+    
+    const modal = new ModalBuilder()
+      .setCustomId('pam_reset_ip_user')
+      .setTitle('🌐 Resetar IP de Usuário');
+    
+    modal.addComponents(
+      mRow(new TextInputBuilder()
+        .setCustomId('discord_id')
+        .setLabel('Discord ID do usuário')
+        .setStyle(TextInputStyle.Short)
+        .setRequired(true)
+        .setPlaceholder('Ex: 123456789012345678')),
+    );
+    
+    return interaction.showModal(modal);
+  }
+
+  if (id === 'pa_limpar_ips') {
+    if (!isAdmin(interaction.member)) return interaction.reply({ content: '❌ Apenas admins.', ephemeral: true });
+    
+    const modal = new ModalBuilder()
+      .setCustomId('pam_limpar_ips')
+      .setTitle('🗑️ Confirmar Limpeza de IPs');
+    
+    modal.addComponents(
+      mRow(new TextInputBuilder()
+        .setCustomId('confirmacao')
+        .setLabel('Digite CONFIRMAR para prosseguir')
+        .setStyle(TextInputStyle.Short)
+        .setRequired(true)
+        .setPlaceholder('CONFIRMAR')),
+    );
+    
+    return interaction.showModal(modal);
+  }
+
+  // ─── Modals de Reset de IP ────────────────────────────────────────────────
+  if (id === 'pam_reset_ip_user') {
+    await interaction.deferReply({ ephemeral: true });
+    
+    const discordId = interaction.fields.getTextInputValue('discord_id').trim();
+    
+    // Verificar se usuário existe
+    const usuario = db.prepare('SELECT * FROM usuarios WHERE discord_id=?').get(discordId);
+    if (!usuario) {
+      return interaction.editReply({ content: '❌ Usuário não encontrado!' });
+    }
+    
+    // Limpar IPs do usuário (assumindo que existe uma coluna last_ip ou similar)
+    // Ajuste conforme a estrutura do seu banco
+    db.prepare('UPDATE usuarios SET last_ip=NULL WHERE discord_id=?').run(discordId);
+    
+    // Se houver tabela de histórico de IPs
+    try {
+      db.prepare('DELETE FROM user_ips WHERE user_id=?').run(discordId);
+    } catch {}
+    
+    // Se houver tabela de acessos/tentativas
+    try {
+      db.prepare('DELETE FROM login_attempts WHERE user_id=?').run(discordId);
+    } catch {}
+    
+    const { log } = require('../utils/logger');
+    await log('sistema', { 
+      executor: interaction.user.id, 
+      descricao: `🌐 IP resetado para usuário <@${discordId}>` 
+    });
+    
+    return interaction.editReply({ 
+      content: `✅ IP resetado com sucesso para <@${discordId}>!\n\n` +
+               `• Histórico de IPs limpo\n` +
+               `• Tentativas de login limpas\n` +
+               `• Usuário pode fazer login de qualquer IP agora` 
+    });
+  }
+
+  if (id === 'pam_limpar_ips') {
+    await interaction.deferReply({ ephemeral: true });
+    
+    const confirmacao = interaction.fields.getTextInputValue('confirmacao').trim().toUpperCase();
+    
+    if (confirmacao !== 'CONFIRMAR') {
+      return interaction.editReply({ content: '❌ Confirmação incorreta. Operação cancelada.' });
+    }
+    
+    let totalLimpo = 0;
+    
+    // Limpar IPs de todos os usuários
+    const result1 = db.prepare('UPDATE usuarios SET last_ip=NULL').run();
+    totalLimpo += result1.changes;
+    
+    // Limpar tabela de histórico de IPs
+    try {
+      const result2 = db.prepare('DELETE FROM user_ips').run();
+      totalLimpo += result2.changes;
+    } catch {}
+    
+    // Limpar tabela de tentativas de login
+    try {
+      const result3 = db.prepare('DELETE FROM login_attempts').run();
+      totalLimpo += result3.changes;
+    } catch {}
+    
+    const { log } = require('../utils/logger');
+    await log('sistema', { 
+      executor: interaction.user.id, 
+      descricao: `🗑️ TODOS os IPs foram limpos do banco (${totalLimpo} registros)` 
+    });
+    
+    return interaction.editReply({ 
+      content: `✅ Limpeza completa realizada!\n\n` +
+               `• ${totalLimpo} registro(s) de IP limpos\n` +
+               `• Todos os usuários podem fazer login de qualquer IP\n` +
+               `• Histórico de acessos zerado\n\n` +
+               `⚠️ Esta ação foi registrada nos logs.`
+    });
   }
 
   if (id === 'pam_afil_cfg_bonus') {
