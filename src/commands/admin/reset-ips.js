@@ -21,50 +21,58 @@ module.exports = {
 
     try {
       let totalLimpo = 0;
+      let mensagens = [];
       
-      // 1. Limpar coluna last_ip
-      const r1 = db.prepare('UPDATE usuarios SET last_ip=NULL WHERE last_ip IS NOT NULL').run();
-      totalLimpo += r1.changes;
-      
-      // 2. Limpar tabela user_ips (se existir)
-      let r2Changes = 0;
+      // 1. Limpar tabela user_ips (se existir)
+      let r1Changes = 0;
       try {
-        const r2 = db.prepare('DELETE FROM user_ips').run();
-        r2Changes = r2.changes;
-        totalLimpo += r2Changes;
+        const r1 = db.prepare('DELETE FROM user_ips').run();
+        r1Changes = r1.changes;
+        totalLimpo += r1Changes;
+        mensagens.push(`✅ ${r1Changes} registro(s) de user_ips deletados`);
       } catch(e) {
-        // Tabela não existe
+        mensagens.push(`⚠️ Tabela user_ips não existe`);
       }
       
-      // 3. Limpar tabela login_attempts (se existir)
+      // 2. Limpar tabela login_attempts (se existir)
+      let r2Changes = 0;
+      try {
+        const r2 = db.prepare('DELETE FROM login_attempts').run();
+        r2Changes = r2.changes;
+        totalLimpo += r2Changes;
+        mensagens.push(`✅ ${r2Changes} tentativa(s) de login deletadas`);
+      } catch(e) {
+        mensagens.push(`⚠️ Tabela login_attempts não existe`);
+      }
+      
+      // 3. Limpar tabela de sessões web (se existir)
       let r3Changes = 0;
       try {
-        const r3 = db.prepare('DELETE FROM login_attempts').run();
+        const r3 = db.prepare('DELETE FROM sessoes_web').run();
         r3Changes = r3.changes;
         totalLimpo += r3Changes;
+        mensagens.push(`✅ ${r3Changes} sessão(ões) web deletadas`);
       } catch(e) {
-        // Tabela não existe
+        mensagens.push(`⚠️ Tabela sessoes_web não existe`);
       }
 
       // Log da operação
       const { log } = require('../../utils/logger');
       await log('sistema', { 
         executor: interaction.user.id, 
-        descricao: `🌐 TODOS os IPs foram resetados (${totalLimpo} registros limpos)` 
+        descricao: `🌐 Reset de IPs executado (${totalLimpo} registros limpos)` 
       });
 
       return interaction.editReply({ 
         content: [
-          '✅ **Reset de IPs concluído com sucesso!**',
+          totalLimpo > 0 ? '✅ **Reset de IPs concluído com sucesso!**' : '⚠️ **Nenhum registro de IP encontrado**',
           '',
-          `📊 **Estatísticas:**`,
-          `• ${r1.changes} usuários com last_ip limpo`,
-          `• ${r2Changes} registros de user_ips deletados`,
-          `• ${r3Changes} tentativas de login deletadas`,
+          `📊 **Resultados:**`,
+          ...mensagens,
           '',
-          `📝 Total: **${totalLimpo}** registro(s) limpos`,
+          totalLimpo > 0 ? `📝 Total: **${totalLimpo}** registro(s) limpos` : '💡 O banco não possui tabelas de controle de IP',
           '',
-          '🔓 Todos os usuários podem fazer login de qualquer IP agora.',
+          '🔓 Sistema de autenticação web (se existir) foi resetado.',
           '⚠️ Esta ação foi registrada nos logs do sistema.'
         ].join('\n')
       });
