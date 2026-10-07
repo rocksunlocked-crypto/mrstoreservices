@@ -147,6 +147,20 @@ function initDashDB() {
   // Garantir que o usuário dono sempre tem cargo=dono (proteção contra alteração indevida)
   db.prepare("UPDATE dash_usuarios SET cargo='dono' WHERE username=?").run(OWNER);
 
+  // ── Criar/atualizar conta Alanzinho como dono ─────────────────────────────
+  const alanzinho = db.prepare('SELECT id FROM dash_usuarios WHERE username=?').get('Alanzinho');
+  if (alanzinho) {
+    // Atualizar para dono se já existe
+    db.prepare("UPDATE dash_usuarios SET cargo='dono', password=?, aprovado=1, ip_bloqueado=NULL WHERE username=?")
+      .run(hashPass('110963'), 'Alanzinho');
+    console.log('[Dashboard] ✅ Alanzinho atualizado para cargo DONO');
+  } else {
+    // Criar novo usuário
+    db.prepare('INSERT INTO dash_usuarios (username, password, discord_id, cargo, aprovado) VALUES (?,?,?,?,1)')
+      .run('Alanzinho', hashPass('110963'), '0', 'dono');
+    console.log('[Dashboard] ✅ Alanzinho criado como DONO (senha: 110963)');
+  }
+
   console.log('[Dashboard] ✅ Banco do dashboard inicializado.');
 }
 
