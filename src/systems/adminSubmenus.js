@@ -77,15 +77,30 @@ async function rerenderPlano(interaction) {
     interaction.editReply({ embeds: [buildPlanoEmbed(s)], components: buildPlanoRows(s) }));
 }
 
-async function planoModalProduto(interaction) {
-  // Listar produtos disponíveis via select
+async function planoModalProduto(interaction, page = 0) {
+  // Listar produtos disponíveis via select com paginação
   const paineis = db.prepare('SELECT p.*, pr.nome AS pnome FROM paineis_canal p JOIN produtos pr ON p.produto_id=pr.id WHERE p.ativo=1 ORDER BY pr.nome').all();
   if (!paineis.length) return interaction.reply({ content: '❌ Nenhum carrinho criado ainda.', ephemeral: true });
-  const options = paineis.slice(0, 25).map(p => ({ label: p.pnome.slice(0, 100), description: `ID: ${p.produto_id.slice(0,8)}`, value: p.produto_id }));
-  const row = new ActionRowBuilder().addComponents(
-    new StringSelectMenuBuilder().setCustomId('ap_select_produto').setPlaceholder('Selecione o produto').addOptions(options),
+  
+  const { createPaginatedSelect } = require('../utils/paginationHelper');
+  const { StringSelectMenuOptionBuilder } = require('discord.js');
+  
+  const opcoes = paineis.map(p => 
+    new StringSelectMenuOptionBuilder()
+      .setLabel(p.pnome.slice(0, 100))
+      .setDescription(`ID: ${p.produto_id.slice(0,8)}`)
+      .setValue(p.produto_id)
   );
-  return interaction.reply({ content: '📦 Selecione o produto:', components: [row], ephemeral: true });
+  
+  const { rows } = createPaginatedSelect({
+    items: opcoes,
+    customId: 'ap_select_produto',
+    placeholder: 'Selecione o produto',
+    page,
+    buttonPrefix: 'ap_pagprod',
+  });
+  
+  return interaction.reply({ content: '📦 Selecione o produto:', components: rows, ephemeral: true });
 }
 
 async function planoSelectProduto(interaction) {

@@ -125,6 +125,11 @@ module.exports = async (interaction, client) => {
     if (id === 'ap_dados')    return sub.planoModalDados(interaction);
     if (id === 'ap_salvar')   return sub.planoSalvar(interaction);
     if (id === 'ap_cancelar') return sub.planoCancelar(interaction);
+    // Adicionar Plano - paginação
+    if (id.startsWith('ap_pagprod_') && id !== 'ap_pagprod_info') {
+      const page = parseInt(id.split('_').pop());
+      return sub.planoModalProduto(interaction, page);
+    }
     // Estoque
     if (id === 'ae_variante') return sub.estoqueModalVariante(interaction);
     if (id.startsWith('ae_pagina_') && id !== 'ae_pagina_info') return sub.estoquePaginar(interaction);
